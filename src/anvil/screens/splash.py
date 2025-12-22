@@ -1,15 +1,14 @@
 """Splash screen for Anvil TUI."""
 
 from textual.app import ComposeResult
-from textual.containers import Center, Vertical
 from textual.screen import Screen
 from textual.widgets import Static
 
-ANVIL_LOGO = r"""
+ANVIL_LOGO = """\
      __________________________
    /                          /|
   /                          / +------__
- /__________________________/ /________/\
+ /__________________________/ /________/\\
  |                          ||________|_/
  |__________________________|
          |          |
@@ -19,7 +18,7 @@ ANVIL_LOGO = r"""
 /___________________________/  |
 |                           |  |
 |          Forged by MKLab  | /
-|___________________________|/
+|___________________________|/\
 """
 
 
@@ -32,36 +31,32 @@ class SplashScreen(Screen[None]):
         align: center middle;
     }
 
-    #splash-container {
-        width: auto;
-        height: auto;
-        padding: 2 4;
-    }
-
     #logo {
         color: $primary;
-        text-align: center;
+        width: auto;
+        height: auto;
     }
 
     #title {
         color: $text;
-        text-align: center;
         text-style: bold;
+        width: 100%;
+        text-align: center;
         padding-top: 1;
     }
 
     #subtitle {
         color: $text-muted;
+        width: 100%;
         text-align: center;
     }
     """
 
     def compose(self) -> ComposeResult:
         """Create the splash screen layout."""
-        with Center(), Vertical(id="splash-container"):
-            yield Static(ANVIL_LOGO, id="logo")
-            yield Static("A N V I L", id="title")
-            yield Static("Microsoft Foundry Manager", id="subtitle")
+        yield Static(ANVIL_LOGO, id="logo")
+        yield Static("A N V I L", id="title")
+        yield Static("Microsoft Foundry Manager", id="subtitle")
 
     def on_mount(self) -> None:
         """Set timer to dismiss splash after delay."""

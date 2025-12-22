@@ -40,6 +40,10 @@ uv run ruff format src tests
 uv run mypy src
 ```
 
+## Development Workflow
+
+Before starting any implementation, run `uv run pytest && uv run ruff check src tests && uv run mypy src` to ensure the codebase is in a working state. After completing changes, run the same commands to verify nothing broke. This keeps the system stable and gives you a solid foundation.
+
 ## Architecture
 
 ### Textual Framework Pattern

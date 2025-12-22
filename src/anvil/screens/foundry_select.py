@@ -11,7 +11,7 @@ from anvil.widgets.searchable_list import SearchableList
 
 
 class FoundrySelectScreen(Screen[FoundryAccount | None]):
-    """Screen for selecting an Azure AI Foundry account.
+    """Screen for selecting an Azure AI Foundry instance.
 
     Returns the selected FoundryAccount or None if cancelled.
     """
@@ -69,8 +69,8 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
         """Initialize the foundry select screen.
 
         Args:
-            foundry_service: Service for listing Foundry accounts.
-            highlight_account_name: Account name to highlight (last used).
+            foundry_service: Service for listing Foundry instances.
+            highlight_account_name: Instance name to highlight (last used).
         """
         super().__init__()
         self._service = foundry_service
@@ -79,13 +79,13 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
 
     def compose(self) -> ComposeResult:
         with Center(), Container(id="select-container"):
-            yield Static("Select Foundry Account", id="screen-title")
-            yield Static("Loading Foundry accounts...", id="status")
+            yield Static("Select Foundry Instance", id="screen-title")
+            yield Static("Loading Foundry instances...", id="status")
             yield Static("", id="error")
             with Center():
                 yield LoadingIndicator(id="loading")
             yield SearchableList[FoundryAccount](
-                placeholder="Type to filter accounts...",
+                placeholder="Type to filter instances...",
                 highlight_value=self._highlight_name,
                 id="account-list",
             )
@@ -96,14 +96,14 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
         self._load_accounts()
 
     def _load_accounts(self) -> None:
-        """Fetch and display Foundry accounts."""
+        """Fetch and display Foundry instances."""
         try:
             self._accounts = self._service.list_accounts()
 
             if not self._accounts:
                 self.query_one("#loading", LoadingIndicator).display = False
                 self.query_one("#status", Static).update(
-                    "No Foundry accounts found in this subscription.\n"
+                    "No Foundry instances found in this subscription.\n"
                     "Create one in the Azure portal first."
                 )
                 return
@@ -116,7 +116,7 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
             # Update UI
             self.query_one("#loading", LoadingIndicator).display = False
             self.query_one("#status", Static).update(
-                f"Found {len(self._accounts)} Foundry account(s). "
+                f"Found {len(self._accounts)} Foundry instance(s). "
                 "Select one or type to filter."
             )
 
@@ -126,11 +126,11 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
 
         except Exception as e:
             self.query_one("#loading", LoadingIndicator).display = False
-            self.query_one("#status", Static).update("Failed to load Foundry accounts.")
+            self.query_one("#status", Static).update("Failed to load Foundry instances.")
             self.query_one("#error", Static).update(str(e))
 
     def on_searchable_list_selected(self, event: SearchableList.Selected) -> None:
-        """Handle account selection."""
+        """Handle instance selection."""
         # Find the account by name
         for acc in self._accounts:
             if acc.name == event.value:

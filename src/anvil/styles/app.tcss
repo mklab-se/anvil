@@ -1,68 +1,70 @@
-/* Anvil TUI Styles */
+/* Anvil TUI Styles - MKLab Brand */
 
 Screen {
+    background: $background;
+}
+
+/* Header styling */
+Header {
+    background: $surface;
+    color: $text;
+}
+
+Header > HeaderTitle {
+    color: $primary;
+    text-style: bold;
+}
+
+/* Footer styling */
+Footer {
     background: $surface;
 }
 
-#home-container {
-    width: 100%;
-    height: 100%;
-    padding: 1;
+FooterKey > .footer-key--key {
+    background: $primary;
+    color: $background;
 }
 
-#welcome-title {
-    text-align: center;
-    text-style: bold;
-    color: $primary;
-    padding: 1 0;
-}
-
-#welcome-subtitle {
-    text-align: center;
+FooterKey > .footer-key--description {
     color: $text-muted;
-    padding-bottom: 1;
 }
 
-#main-content {
-    width: 100%;
-    height: 100%;
+/* Input styling */
+Input {
+    background: $panel;
+    border: solid $panel;
 }
 
-#sidebar {
-    width: 25;
-    height: 100%;
-    border-right: solid $primary;
-    padding: 1;
+Input:focus {
+    border: solid $primary;
 }
 
-#content-area {
-    width: 100%;
-    height: 100%;
-    padding: 1 2;
+Input > .input--placeholder {
+    color: $text-muted;
 }
 
-.section-header {
+/* DataTable styling */
+DataTable > .datatable--header {
+    background: $panel;
+    color: $text-muted;
     text-style: bold;
-    color: $secondary;
-    padding-bottom: 1;
 }
 
-#nav-list {
-    height: auto;
-}
-
-#nav-list > ListItem {
-    padding: 0 1;
-}
-
-#nav-list > ListItem:hover {
+DataTable > .datatable--cursor {
     background: $primary 20%;
 }
 
-#nav-list > ListItem.-selected {
-    background: $primary 40%;
+DataTable > .datatable--hover {
+    background: $surface;
 }
 
-#getting-started-text {
-    color: $text;
+/* LoadingIndicator styling */
+LoadingIndicator {
+    color: $primary;
+}
+
+/* Notifications */
+Toast {
+    background: $surface;
+    border: solid $primary;
 }

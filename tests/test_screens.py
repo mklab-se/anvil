@@ -32,6 +32,8 @@ def mock_auth_and_config():
         mock_auth = mock_auth_cls.return_value
         mock_auth.check_auth_status.return_value = AuthResult(status=AuthStatus.AUTHENTICATED)
         mock_auth.is_authenticated.return_value = True
+        # Return None for credential to prevent real API calls in tests
+        mock_auth.get_credential.return_value = None
 
         mock_config = mock_config_cls.return_value
         mock_config.load.return_value = config
@@ -45,30 +47,43 @@ def mock_auth_and_config():
 async def test_home_screen_renders(mock_auth_and_config) -> None:
     """Test that the home screen renders correctly."""
     app = AnvilApp()
-    async with app.run_test():
+    async with app.run_test() as pilot:
+        # Skip splash screen
+        await pilot.press("enter")
         assert isinstance(app.screen, HomeScreen)
 
-        welcome = app.screen.query_one("#welcome-title")
-        assert welcome is not None
+        # Check main container exists
+        main_container = app.screen.query_one("#main-container")
+        assert main_container is not None
 
 
 async def test_home_screen_has_sidebar(mock_auth_and_config) -> None:
     """Test that the home screen has a sidebar with navigation."""
     app = AnvilApp()
-    async with app.run_test():
-        sidebar = app.screen.query_one("#sidebar")
+    async with app.run_test() as pilot:
+        # Skip splash screen
+        await pilot.press("enter")
+
+        from anvil.widgets.sidebar import Sidebar
+
+        sidebar = app.screen.query_one("#sidebar", Sidebar)
         assert sidebar is not None
 
-        nav_list = app.screen.query_one("#nav-list")
-        assert nav_list is not None
+        # Check sidebar has resource items
+        assert len(sidebar._items) > 0
 
 
-async def test_home_screen_shows_project_info(mock_auth_and_config) -> None:
-    """Test that the home screen displays current project info."""
+async def test_home_screen_has_resource_table(mock_auth_and_config) -> None:
+    """Test that the home screen has a resource table."""
     app = AnvilApp()
-    async with app.run_test():
-        connection_info = app.screen.query_one("#connection-info")
-        assert connection_info is not None
+    async with app.run_test() as pilot:
+        # Skip splash screen
+        await pilot.press("enter")
 
-        project_name = app.screen.query_one("#project-name")
-        assert project_name is not None
+        from textual.widgets import DataTable
+
+        table = app.screen.query_one("#resource-table", DataTable)
+        assert table is not None
+
+        # Check table has columns and rows (placeholder data)
+        assert table.row_count > 0

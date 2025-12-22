@@ -19,6 +19,8 @@ def mock_auth_authenticated():
         mock_service = mock_cls.return_value
         mock_service.check_auth_status.return_value = AuthResult(status=AuthStatus.AUTHENTICATED)
         mock_service.is_authenticated.return_value = True
+        # Return None for credential to prevent real API calls in tests
+        mock_service.get_credential.return_value = None
         yield mock_service
 
 
@@ -72,9 +74,16 @@ async def test_app_starts(mock_auth_authenticated, mock_config_with_selection) -
 async def test_app_goes_to_home_with_cached_selection(
     mock_auth_authenticated, mock_config_with_selection
 ) -> None:
-    """Test that with cached selection, app goes directly to home screen."""
+    """Test that with cached selection, app goes to home screen after splash."""
+    from anvil.screens.splash import SplashScreen
+
     app = AnvilApp()
-    async with app.run_test():
+    async with app.run_test() as pilot:
+        # Should show splash first
+        assert isinstance(app.screen, SplashScreen)
+        # Press key to skip splash
+        await pilot.press("enter")
+        # Now should be on home screen
         assert isinstance(app.screen, HomeScreen)
         assert app.current_selection is not None
         assert app.current_selection.project_name == "test-project"
@@ -95,6 +104,8 @@ async def test_quit_binding_on_home(mock_auth_authenticated, mock_config_with_se
     """Test that pressing 'q' quits the application from home screen."""
     app = AnvilApp()
     async with app.run_test() as pilot:
+        # Skip splash screen
+        await pilot.press("enter")
         # Ensure we're on home screen
         assert isinstance(app.screen, HomeScreen)
         await pilot.press("q")

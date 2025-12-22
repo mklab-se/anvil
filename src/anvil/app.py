@@ -12,6 +12,7 @@ from anvil.screens.auth import AuthScreen
 from anvil.screens.foundry_select import FoundrySelectScreen
 from anvil.screens.home import HomeScreen
 from anvil.screens.project_select import ProjectSelectScreen
+from anvil.screens.splash import SplashScreen
 from anvil.screens.subscription_select import SubscriptionSelectScreen
 from anvil.services.auth import AuthService, AuthStatus
 from anvil.services.foundry import FoundryAccount, FoundryProject, FoundryService
@@ -203,12 +204,34 @@ class AnvilApp(App[None]):
             on_project_selected,
         )
 
-    def _show_home(self) -> None:
-        """Show the home screen."""
+    def _show_home(self, show_splash: bool = True) -> None:
+        """Show the home screen.
+
+        Args:
+            show_splash: Whether to show splash screen first.
+        """
         # Clear any existing screens and push home
         while len(self.screen_stack) > 1:
             self.pop_screen()
-        self.push_screen(HomeScreen(current_selection=self.current_selection))
+
+        if show_splash:
+            # Show splash first, then home
+            def on_splash_dismiss(_: None) -> None:
+                self.push_screen(
+                    HomeScreen(
+                        current_selection=self.current_selection,
+                        credential=self.auth_service.get_credential(),
+                    )
+                )
+
+            self.push_screen(SplashScreen(), on_splash_dismiss)
+        else:
+            self.push_screen(
+                HomeScreen(
+                    current_selection=self.current_selection,
+                    credential=self.auth_service.get_credential(),
+                )
+            )
 
     def action_help(self) -> None:
         """Show help notification."""

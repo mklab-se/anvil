@@ -1,24 +1,17 @@
 """Splash screen for Anvil TUI."""
 
 from textual.app import ComposeResult
+from textual.containers import Container
 from textual.screen import Screen
 from textual.widgets import Static
 
 ANVIL_LOGO = """\
-     __________________________
-   /                          /|
-  /                          / +------__
- /__________________________/ /________/\\
- |                          ||________|_/
- |__________________________|
-         |          |
-   ______|          |__________
-  /      |          |         /|
- /                           / |
-/___________________________/  |
-|                           |  |
-|          Forged by MKLab  | /
-|___________________________|/\
+  █████╗ ███╗   ██╗██╗   ██╗██╗██╗
+ ██╔══██╗████╗  ██║██║   ██║██║██║
+ ███████║██╔██╗ ██║██║   ██║██║██║
+ ██╔══██║██║╚██╗██║╚██╗ ██╔╝██║██║
+ ██║  ██║██║ ╚████║ ╚████╔╝ ██║███████╗
+ ╚═╝  ╚═╝╚═╝  ╚═══╝  ╚═══╝  ╚═╝╚══════╝\
 """
 
 
@@ -31,32 +24,30 @@ class SplashScreen(Screen[None]):
         align: center middle;
     }
 
+    #splash-content {
+        width: auto;
+        height: auto;
+        align: center middle;
+    }
+
     #logo {
         color: $primary;
         width: auto;
         height: auto;
     }
 
-    #title {
-        color: $text;
-        text-style: bold;
-        width: 100%;
-        text-align: center;
-        padding-top: 1;
-    }
-
     #subtitle {
         color: $text-muted;
-        width: 100%;
+        width: auto;
         text-align: center;
     }
     """
 
     def compose(self) -> ComposeResult:
         """Create the splash screen layout."""
-        yield Static(ANVIL_LOGO, id="logo")
-        yield Static("A N V I L", id="title")
-        yield Static("Microsoft Foundry Manager", id="subtitle")
+        with Container(id="splash-content"):
+            yield Static(ANVIL_LOGO, id="logo")
+            yield Static("Your tool in the foundry", id="subtitle")
 
     def on_mount(self) -> None:
         """Set timer to dismiss splash after delay."""

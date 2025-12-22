@@ -9,6 +9,7 @@ from anvil.app import AnvilApp
 from anvil.config import AppConfig, FoundrySelection
 from anvil.screens.home import HomeScreen
 from anvil.services.auth import AuthResult, AuthStatus
+from anvil.services.project_client import Agent
 
 
 @pytest.fixture
@@ -87,3 +88,320 @@ async def test_home_screen_has_resource_table(mock_auth_and_config) -> None:
 
         # Check table has columns and rows (placeholder data)
         assert table.row_count > 0
+
+
+async def test_agents_table_has_correct_columns(mock_auth_and_config) -> None:
+    """Test that the agents table has the correct columns."""
+    app = AnvilApp()
+    async with app.run_test() as pilot:
+        await pilot.press("enter")  # Skip splash
+
+        from textual.widgets import DataTable
+
+        table = app.screen.query_one("#resource-table", DataTable)
+
+        # Get column labels
+        columns = [col.label.plain for col in table.columns.values()]
+        assert columns == ["Name", "Version", "Type", "Created", "Description"]
+
+
+async def test_agents_table_rows_have_data(mock_auth_and_config) -> None:
+    """Test that agent table rows have actual data in all columns."""
+    app = AnvilApp()
+    async with app.run_test() as pilot:
+        await pilot.press("enter")  # Skip splash
+
+        from textual.widgets import DataTable
+
+        table = app.screen.query_one("#resource-table", DataTable)
+        assert table.row_count > 0
+
+        # Get first row data
+        first_row_key = next(iter(table.rows.keys()))
+        row_data = table.get_row(first_row_key)
+
+        # All columns should have data (not empty strings)
+        name, version, agent_type, created, description = row_data
+        assert name, "Name should not be empty"
+        assert version, "Version should not be empty"
+        assert agent_type, "Type should not be empty"
+        assert created, "Created should not be empty"
+        assert description, "Description should not be empty"
+
+
+async def test_agents_stored_in_screen(mock_auth_and_config) -> None:
+    """Test that Agent objects are stored in the screen for lookup."""
+    app = AnvilApp()
+    async with app.run_test() as pilot:
+        await pilot.press("enter")  # Skip splash
+
+        home_screen = app.screen
+        assert hasattr(home_screen, "_agents")
+        assert len(home_screen._agents) > 0
+
+        # Verify agents have required fields
+        agent = home_screen._agents[0]
+        assert agent.id, "Agent should have an ID"
+        assert agent.name, "Agent should have a name"
+        assert agent.model, "Agent should have a model"
+
+
+async def test_sidebar_preview_shows_agent_details(mock_auth_and_config) -> None:
+    """Test that sidebar shows agent details when row is highlighted."""
+    app = AnvilApp()
+    async with app.run_test() as pilot:
+        await pilot.press("enter")  # Skip splash
+
+        from textual.widgets import DataTable
+
+        # Focus the table and trigger row highlight
+        table = app.screen.query_one("#resource-table", DataTable)
+        table.focus()
+        await pilot.pause()
+
+        # Move cursor to ensure row is highlighted (triggers on_data_table_row_highlighted)
+        await pilot.press("down")
+        await pilot.press("up")
+        await pilot.pause()
+
+        # Check that the preview panel is visible
+        preview_panel = app.screen.query_one("#preview-panel")
+        assert "visible" in preview_panel.classes, "Preview panel should be visible"
+
+        # Verify agent was looked up correctly
+        home_screen = app.screen
+        assert len(home_screen._agents) > 0, "Should have agents loaded"
+
+        # The first agent should have model set
+        first_agent = home_screen._agents[0]
+        assert first_agent.model is not None, f"First agent should have model, got: {first_agent}"
+
+
+async def test_agent_lookup_by_id(mock_auth_and_config) -> None:
+    """Test that _get_agent_by_id works correctly."""
+    app = AnvilApp()
+    async with app.run_test() as pilot:
+        await pilot.press("enter")  # Skip splash
+
+        home_screen = app.screen
+
+        # Get the first agent
+        if home_screen._agents:
+            first_agent = home_screen._agents[0]
+            # Lookup should return the same agent
+            found_agent = home_screen._get_agent_by_id(first_agent.id)
+            assert found_agent is not None, "Should find agent by ID"
+            assert found_agent.id == first_agent.id
+            assert found_agent.name == first_agent.name
+
+
+class TestFormatAgentPreview:
+    """Tests for the _format_agent_preview method."""
+
+    @pytest.fixture
+    def home_screen(self):
+        """Create a HomeScreen instance for testing."""
+        return HomeScreen()
+
+    def test_formats_model(self, home_screen):
+        """Test that model is displayed correctly."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o-mini",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Model:" in result
+        assert "gpt-4o-mini" in result
+
+    def test_formats_model_not_set(self, home_screen):
+        """Test display when model is None."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model=None,
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Not set" in result
+
+    def test_formats_instructions_truncated(self, home_screen):
+        """Test that long instructions are truncated."""
+        long_instructions = "A" * 200  # 200 characters
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=long_instructions,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Instructions:" in result
+        assert "..." in result  # Should be truncated
+        assert len(long_instructions) > 150  # Confirm it was long enough to truncate
+
+    def test_formats_tools_list(self, home_screen):
+        """Test that tools are displayed as comma-separated list."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=["Code Interpreter", "File Search", "Mcp"],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Tools:" in result
+        assert "Code Interpreter" in result
+        assert "File Search" in result
+        assert "Mcp" in result
+
+    def test_formats_empty_tools(self, home_screen):
+        """Test display when tools list is empty."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Tools:" in result
+        assert "None" in result
+
+    def test_formats_knowledge_list(self, home_screen):
+        """Test that knowledge bases are displayed."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=["kb_docs", "kb_manuals"],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Knowledge:" in result
+        assert "kb_docs" in result
+        assert "kb_manuals" in result
+
+    def test_formats_memory_enabled(self, home_screen):
+        """Test memory enabled display."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=True,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Memory:" in result
+        assert "Enabled" in result
+
+    def test_formats_memory_disabled(self, home_screen):
+        """Test memory disabled display."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Memory:" in result
+        assert "Disabled" in result
+
+    def test_formats_guardrails(self, home_screen):
+        """Test guardrails display."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=["Content Filter", "Grounding"],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Guardrails:" in result
+        assert "Content Filter" in result
+        assert "Grounding" in result

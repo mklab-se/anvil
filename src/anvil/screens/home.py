@@ -90,12 +90,13 @@ class HomeScreen(Screen[None]):
 
     /* Preview panel */
     #preview-panel {
-        width: 30;
+        width: 40;
         height: 100%;
         background: $surface;
         border-left: solid $panel;
         padding: 1;
         display: none;
+        overflow-y: auto;
     }
 
     #preview-panel.visible {
@@ -244,23 +245,47 @@ class HomeScreen(Screen[None]):
         for deployment in self._deployments:
             table.add_row(
                 deployment.name,
-                deployment.model,
-                deployment.version,
-                deployment.status,
+                deployment.model_name,
+                deployment.model_version,
+                deployment.deployment_type,
+                deployment.model_publisher,
                 key=deployment.name,
             )
 
     def _load_placeholder_models(self) -> None:
         """Load placeholder model data for demonstration."""
-        table = self.query_one("#resource-table", DataTable)
-        table.clear()
-        table.add_rows(
-            [
-                ("gpt-4o", "gpt-4o", "2024-08-06", "Ready"),
-                ("gpt-4o-mini", "gpt-4o-mini", "2024-07-18", "Ready"),
-                ("text-embedding-3-large", "text-embedding-3-large", "1", "Ready"),
-            ]
-        )
+        self._deployments = [
+            Deployment(
+                name="gpt-4o",
+                model_name="gpt-4o",
+                model_version="2024-08-06",
+                model_publisher="OpenAI",
+                deployment_type="Global Standard",
+                capacity=100,
+                capabilities=["Chat Completion"],
+            ),
+            Deployment(
+                name="gpt-4o-mini",
+                model_name="gpt-4o-mini",
+                model_version="2024-07-18",
+                model_publisher="OpenAI",
+                deployment_type="Global Standard",
+                capacity=150,
+                capabilities=["Chat Completion"],
+            ),
+            Deployment(
+                name="text-embedding-3-large",
+                model_name="text-embedding-3-large",
+                model_version="1",
+                model_publisher="OpenAI",
+                deployment_type="Global Standard",
+                capacity=500,
+                capabilities=["Embeddings"],
+            ),
+        ]
+        # Sort by name
+        self._deployments.sort(key=lambda d: d.name.lower())
+        self._populate_models_table()
 
     def _populate_agents_table(self) -> None:
         """Populate the table with fetched agents."""
@@ -276,10 +301,17 @@ class HomeScreen(Screen[None]):
             if agent.created_at:
                 created_str = agent.created_at.strftime("%m/%d/%y, %I:%M %p")
 
+            # Truncate description for table display
+            description = agent.description or ""
+            if len(description) > 40:
+                description = description[:37] + "..."
+
             table.add_row(
                 agent.name,
+                agent.version,
                 agent.agent_type,
                 created_str,
+                description,
                 key=agent.id,
             )
 
@@ -287,38 +319,81 @@ class HomeScreen(Screen[None]):
         """Configure the table for Agents resource."""
         table = self.query_one("#resource-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("Name", "Type", "Created")
+        table.add_columns("Name", "Version", "Type", "Created", "Description")
 
     def _setup_models_table(self) -> None:
         """Configure the table for Models resource."""
         table = self.query_one("#resource-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("Name", "Model", "Version", "Status")
+        table.add_columns("Name", "Model", "Version", "Type", "Publisher")
 
     def _load_placeholder_data(self) -> None:
         """Load placeholder data for demonstration."""
-        table = self.query_one("#resource-table", DataTable)
+        from datetime import datetime
+
         if self._current_resource == "agents":
-            # Placeholder agent data
-            table.add_rows(
-                [
-                    ("irma", "prompt", "12/18/25, 4:58 PM"),
-                    ("irma-v3", "prompt", "12/18/25, 3:09 PM"),
-                    ("testar", "prompt", "12/18/25, 3:09 PM"),
-                    ("agent-smith", "prompt", "12/18/25, 12:39 PM"),
-                    ("agent-doc", "prompt", "12/17/25, 11:24 AM"),
-                    ("mr-bond", "prompt", "12/17/25, 12:23 PM"),
-                ]
-            )
+            # Create realistic placeholder Agent objects
+            self._agents = [
+                Agent(
+                    id="agent-001",
+                    name="irma",
+                    version="-",
+                    agent_type="Assistant",
+                    created_at=datetime(2025, 12, 18, 16, 58),
+                    description="Customer service assistant for handling inquiries",
+                    model="gpt-4o",
+                    instructions="You are a helpful customer service agent. Answer questions politely and accurately.",
+                    tools=["Code Interpreter", "File Search"],
+                    knowledge=["vs_abc123"],
+                    memory_enabled=True,
+                    guardrails=["Content Filter"],
+                ),
+                Agent(
+                    id="agent-002",
+                    name="code-helper",
+                    version="-",
+                    agent_type="Assistant",
+                    created_at=datetime(2025, 12, 18, 15, 9),
+                    description="Programming assistant with code execution",
+                    model="gpt-4o",
+                    instructions="You are a programming assistant. Help users write, debug, and understand code.",
+                    tools=["Code Interpreter"],
+                    knowledge=[],
+                    memory_enabled=False,
+                    guardrails=[],
+                ),
+                Agent(
+                    id="agent-003",
+                    name="doc-search",
+                    version="-",
+                    agent_type="Assistant",
+                    created_at=datetime(2025, 12, 17, 11, 24),
+                    description="Documentation search and Q&A",
+                    model="gpt-4o-mini",
+                    instructions="Search the documentation to answer user questions accurately.",
+                    tools=["File Search", "Bing Grounding"],
+                    knowledge=["vs_docs001", "vs_docs002"],
+                    memory_enabled=True,
+                    guardrails=["Content Filter", "Grounding"],
+                ),
+                Agent(
+                    id="agent-004",
+                    name="data-analyst",
+                    version="-",
+                    agent_type="Assistant",
+                    created_at=datetime(2025, 12, 16, 9, 30),
+                    description="Analyzes data and creates visualizations",
+                    model="gpt-4o",
+                    instructions="Analyze data files and create charts and insights.",
+                    tools=["Code Interpreter", "File Search"],
+                    knowledge=["vs_data123"],
+                    memory_enabled=False,
+                    guardrails=[],
+                ),
+            ]
+            self._populate_agents_table()
         elif self._current_resource == "models":
-            # Placeholder model data
-            table.add_rows(
-                [
-                    ("gpt-4o", "gpt-4o", "2024-08-06", "Ready"),
-                    ("gpt-4o-mini", "gpt-4o-mini", "2024-07-18", "Ready"),
-                    ("text-embedding-3-large", "text-embedding-3-large", "1", "Ready"),
-                ]
-            )
+            self._load_placeholder_models()
 
     def on_sidebar_selected(self, event: Sidebar.Selected) -> None:
         """Handle sidebar navigation."""
@@ -359,6 +434,85 @@ class HomeScreen(Screen[None]):
             title.update(event.resource_id.title())
             self._load_placeholder_data()
 
+    def _get_agent_by_id(self, agent_id: str) -> Agent | None:
+        """Find an agent by its ID."""
+        for agent in self._agents:
+            if agent.id == agent_id:
+                return agent
+        return None
+
+    def _get_deployment_by_name(self, name: str) -> Deployment | None:
+        """Find a deployment by its name."""
+        for deployment in self._deployments:
+            if deployment.name == name:
+                return deployment
+        return None
+
+    def _format_deployment_preview(self, deployment: Deployment) -> str:
+        """Format deployment details for the preview panel."""
+        lines = []
+
+        # Model info
+        lines.append(f"[b]Model:[/b] {deployment.model_name}")
+        lines.append(f"[b]Version:[/b] {deployment.model_version}")
+        lines.append(f"[b]Publisher:[/b] {deployment.model_publisher}")
+
+        # Deployment details
+        lines.append(f"\n[b]Deployment Type:[/b] {deployment.deployment_type}")
+        lines.append(f"[b]Capacity:[/b] {deployment.capacity}")
+
+        # Capabilities
+        if deployment.capabilities:
+            caps_str = ", ".join(deployment.capabilities)
+            lines.append(f"\n[b]Capabilities:[/b]\n{caps_str}")
+        else:
+            lines.append("\n[b]Capabilities:[/b] None")
+
+        return "\n".join(lines)
+
+    def _format_agent_preview(self, agent: Agent) -> str:
+        """Format agent details for the preview panel."""
+        lines = []
+
+        # Model
+        lines.append(f"[b]Model:[/b] {agent.model or 'Not set'}")
+
+        # Instructions (truncated with indicator)
+        if agent.instructions:
+            instructions = agent.instructions
+            if len(instructions) > 150:
+                instructions = instructions[:147] + "..."
+            lines.append(f"\n[b]Instructions:[/b]\n{instructions}")
+        else:
+            lines.append("\n[b]Instructions:[/b] None")
+
+        # Tools
+        if agent.tools:
+            tools_str = ", ".join(agent.tools)
+            lines.append(f"\n[b]Tools:[/b]\n{tools_str}")
+        else:
+            lines.append("\n[b]Tools:[/b] None")
+
+        # Knowledge
+        if agent.knowledge:
+            knowledge_str = "\n".join(f"  - {k[:20]}..." if len(k) > 20 else f"  - {k}" for k in agent.knowledge)
+            lines.append(f"\n[b]Knowledge:[/b]\n{knowledge_str}")
+        else:
+            lines.append("\n[b]Knowledge:[/b] None")
+
+        # Memory
+        memory_status = "Enabled" if agent.memory_enabled else "Disabled"
+        lines.append(f"\n[b]Memory:[/b] {memory_status}")
+
+        # Guardrails
+        if agent.guardrails:
+            guardrails_str = ", ".join(agent.guardrails)
+            lines.append(f"\n[b]Guardrails:[/b]\n{guardrails_str}")
+        else:
+            lines.append("\n[b]Guardrails:[/b] None")
+
+        return "\n".join(lines)
+
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Show preview panel when a row is selected."""
         table = self.query_one("#resource-table", DataTable)
@@ -371,23 +525,41 @@ class HomeScreen(Screen[None]):
         content = self.query_one("#preview-content", Static)
 
         if self._current_resource == "agents" and row_data:
-            name, agent_type, created = row_data
+            name = row_data[0]
             title.update(str(name))
-            content.update(
-                f"[b]Type:[/b] {agent_type}\n"
-                f"[b]Created:[/b] {created}\n\n"
-                "[dim]Press Enter to edit[/dim]\n"
-                "[dim]Press d to delete[/dim]"
-            )
+
+            # Try to get full agent details
+            agent = self._get_agent_by_id(str(event.row_key.value)) if event.row_key else None
+            if agent:
+                content.update(self._format_agent_preview(agent))
+            else:
+                # Fallback for placeholder data
+                _, version, agent_type, created, description = row_data
+                content.update(
+                    f"[b]Version:[/b] {version}\n"
+                    f"[b]Type:[/b] {agent_type}\n"
+                    f"[b]Created:[/b] {created}\n"
+                    f"[b]Description:[/b] {description}\n\n"
+                    "[dim]Press Enter to edit[/dim]\n"
+                    "[dim]Press d to delete[/dim]"
+                )
         elif self._current_resource == "models" and row_data:
-            name, model, version, status = row_data
+            name = row_data[0]
             title.update(str(name))
-            content.update(
-                f"[b]Model:[/b] {model}\n"
-                f"[b]Version:[/b] {version}\n"
-                f"[b]Status:[/b] {status}\n\n"
-                "[dim]Press Enter to view details[/dim]"
-            )
+
+            # Try to get full deployment details
+            deployment = self._get_deployment_by_name(str(event.row_key.value)) if event.row_key else None
+            if deployment:
+                content.update(self._format_deployment_preview(deployment))
+            else:
+                # Fallback for table data only
+                _, model, version, dep_type, publisher = row_data
+                content.update(
+                    f"[b]Model:[/b] {model}\n"
+                    f"[b]Version:[/b] {version}\n"
+                    f"[b]Type:[/b] {dep_type}\n"
+                    f"[b]Publisher:[/b] {publisher}"
+                )
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         """Update preview when row highlight changes."""
@@ -402,23 +574,41 @@ class HomeScreen(Screen[None]):
             content = self.query_one("#preview-content", Static)
 
             if self._current_resource == "agents" and row_data:
-                name, agent_type, created = row_data
+                name = row_data[0]
                 title.update(str(name))
-                content.update(
-                    f"[b]Type:[/b] {agent_type}\n"
-                    f"[b]Created:[/b] {created}\n\n"
-                    "[dim]Press Enter to edit[/dim]\n"
-                    "[dim]Press d to delete[/dim]"
-                )
+
+                # Try to get full agent details
+                agent = self._get_agent_by_id(str(event.row_key.value)) if event.row_key else None
+                if agent:
+                    content.update(self._format_agent_preview(agent))
+                else:
+                    # Fallback for placeholder data
+                    _, version, agent_type, created, description = row_data
+                    content.update(
+                        f"[b]Version:[/b] {version}\n"
+                        f"[b]Type:[/b] {agent_type}\n"
+                        f"[b]Created:[/b] {created}\n"
+                        f"[b]Description:[/b] {description}\n\n"
+                        "[dim]Press Enter to edit[/dim]\n"
+                        "[dim]Press d to delete[/dim]"
+                    )
             elif self._current_resource == "models" and row_data:
-                name, model, version, status = row_data
+                name = row_data[0]
                 title.update(str(name))
-                content.update(
-                    f"[b]Model:[/b] {model}\n"
-                    f"[b]Version:[/b] {version}\n"
-                    f"[b]Status:[/b] {status}\n\n"
-                    "[dim]Press Enter to view details[/dim]"
-                )
+
+                # Try to get full deployment details
+                deployment = self._get_deployment_by_name(str(event.row_key.value)) if event.row_key else None
+                if deployment:
+                    content.update(self._format_deployment_preview(deployment))
+                else:
+                    # Fallback for table data only
+                    _, model, version, dep_type, publisher = row_data
+                    content.update(
+                        f"[b]Model:[/b] {model}\n"
+                        f"[b]Version:[/b] {version}\n"
+                        f"[b]Type:[/b] {dep_type}\n"
+                        f"[b]Publisher:[/b] {publisher}"
+                    )
 
     def action_focus_search(self) -> None:
         """Focus the search input."""

@@ -10,6 +10,12 @@ Anvil is a Terminal User Interface (TUI) for managing Microsoft Foundry projects
 - **Commands**: `anvil` or `anvil-tui`
 - **Install**: `uvx anvil-tui` or `uv tool install anvil-tui`
 
+## Screenshots
+
+Anvil automatically saves screenshots as SVG files in the user's Downloads folder when taken from within the app. The filename format is `Anvil_<timestamp>.svg`, for example `Anvil_2025-12-22T22_49_35_707419.svg`.
+
+If the user refers to a screenshot but none is pasted in the prompt, check `~/Downloads/` for the latest `Anvil_*.svg` file.
+
 ## Commands
 
 ```bash
@@ -84,6 +90,38 @@ async def test_example(app: AnvilApp) -> None:
 ```
 
 The `pilot` object simulates user interaction (clicks, key presses). Use `app.query_one()` to assert widget state.
+
+#### Coverage Goals
+
+| Component | Target | Priority |
+|-----------|--------|----------|
+| **Overall** | 75% | - |
+| **Services** (`services/`) | 85% | High - API/SDK parsing bugs are hard to debug in production |
+| **Screens** (`screens/`) | 65% | Medium - UI handlers are harder to test |
+| **Widgets** (`widgets/`) | 75% | Medium - Reusable components |
+
+#### Testing Best Practices
+
+1. **Always mock external APIs** - Use `unittest.mock` to simulate SDK responses with the real data structure
+2. **Test the actual SDK response format** - When integrating with Azure SDKs, first inspect what the API actually returns (nested structures, dict-like objects, etc.) and create mock fixtures that match
+3. **Test edge cases** - Empty lists, None values, missing fields
+4. **Test formatting functions** - Sidebar previews, table displays, truncation logic
+
+Example of mocking Azure SDK responses:
+
+```python
+def _create_mock_agent(self, agent_id: str, name: str, model: str) -> MagicMock:
+    """Create mock with REAL Azure SDK structure."""
+    mock = MagicMock()
+    mock.id = agent_id
+    mock.name = name
+    mock.versions = {
+        "latest": {
+            "definition": {"model": model, "instructions": "..."}
+        }
+    }
+    return mock
+```
 
 ## CI/CD
 

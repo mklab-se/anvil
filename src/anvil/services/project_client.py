@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from azure.ai.projects import AIProjectClient
 from azure.core.credentials import TokenCredential
@@ -16,10 +17,16 @@ class Agent:
 
     id: str
     name: str
+    version: str
     agent_type: str
     created_at: datetime | None
-    instructions: str | None
+    description: str | None
     model: str | None
+    instructions: str | None
+    tools: list[str]
+    knowledge: list[str]
+    memory_enabled: bool
+    guardrails: list[str]
 
 
 @dataclass
@@ -27,9 +34,12 @@ class Deployment:
     """Model deployment information."""
 
     name: str
-    model: str
-    version: str
-    status: str
+    model_name: str
+    model_version: str
+    model_publisher: str
+    deployment_type: str  # From sku.name (e.g., "Global Standard")
+    capacity: int
+    capabilities: list[str]  # e.g., ["chat_completion", "embeddings"]
 
 
 class ProjectClientService:
@@ -64,6 +74,69 @@ class ProjectClientService:
             )
         return self._client
 
+    def _parse_created_at(self, value: datetime | int | None) -> datetime | None:
+        """Parse created_at timestamp from various formats."""
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, int):
+            return datetime.fromtimestamp(value)
+        return None
+
+    def _extract_tools(self, agent_data: object) -> list[str]:
+        """Extract tool type names from agent tools."""
+        tools: list[str] = []
+        agent_tools = getattr(agent_data, "tools", None)
+        if not agent_tools:
+            return tools
+
+        for tool in agent_tools:
+            # Tool type is the discriminator - could be string or enum
+            tool_type = getattr(tool, "type", None)
+            if tool_type:
+                # Convert enum to string if needed, format nicely
+                type_str = str(tool_type)
+                # Handle enum values like "ToolType.CODE_INTERPRETER"
+                if "." in type_str:
+                    type_str = type_str.split(".")[-1]
+                # Convert snake_case to Title Case
+                type_str = type_str.replace("_", " ").title()
+                tools.append(type_str)
+        return tools
+
+    def _extract_knowledge(self, agent_data: object) -> list[str]:
+        """Extract knowledge base IDs from tool resources."""
+        knowledge: list[str] = []
+        tool_resources = getattr(agent_data, "tool_resources", None)
+        if not tool_resources:
+            return knowledge
+
+        # Check file_search vector stores
+        file_search = getattr(tool_resources, "file_search", None)
+        if file_search:
+            vector_store_ids = getattr(file_search, "vector_store_ids", None)
+            if vector_store_ids:
+                knowledge.extend(vector_store_ids)
+
+        # Check code_interpreter files
+        code_interpreter = getattr(tool_resources, "code_interpreter", None)
+        if code_interpreter:
+            file_ids = getattr(code_interpreter, "file_ids", None)
+            if file_ids:
+                knowledge.extend(file_ids)
+
+        return knowledge
+
+    def _extract_metadata_field(
+        self, agent_data: object, key: str, default: object = None
+    ) -> object:
+        """Extract a field from agent metadata."""
+        metadata = getattr(agent_data, "metadata", None)
+        if metadata and isinstance(metadata, dict):
+            return metadata.get(key, default)
+        return default
+
     def list_agents(self) -> list[Agent]:
         """List all agents in the project.
 
@@ -81,22 +154,111 @@ class ProjectClientService:
             agent_list = self.client.agents.list()
 
             for agent_data in agent_list:
-                # Parse created_at timestamp if available
-                created_at = None
-                if hasattr(agent_data, "created_at") and agent_data.created_at:
-                    if isinstance(agent_data.created_at, datetime):
-                        created_at = agent_data.created_at
-                    elif isinstance(agent_data.created_at, int):
-                        created_at = datetime.fromtimestamp(agent_data.created_at)
+                # The API returns data nested under versions.latest.definition
+                # Get the versions object
+                versions = getattr(agent_data, "versions", None)
+                latest_version: Any = None
+                definition: Any = None
+
+                if versions:
+                    # versions can be dict-like or have 'latest' attribute
+                    if hasattr(versions, "get"):
+                        latest_version = versions.get("latest")
+                    elif hasattr(versions, "latest"):
+                        latest_version = versions.latest
+
+                if latest_version:
+                    if hasattr(latest_version, "get"):
+                        definition = latest_version.get("definition", {})
+                    elif hasattr(latest_version, "definition"):
+                        definition = latest_version.definition
+
+                # Extract version info using safe dict/attr access
+                version = "-"
+                created_at_raw = None
+                description = None
+                if latest_version:
+                    if hasattr(latest_version, "get"):
+                        version = str(latest_version.get("version", "-"))
+                        created_at_raw = latest_version.get("created_at")
+                        description = latest_version.get("description") or None
+                    else:
+                        version = str(getattr(latest_version, "version", "-"))
+                        created_at_raw = getattr(latest_version, "created_at", None)
+                        description = getattr(latest_version, "description", None)
+
+                # Extract from definition
+                agent_type = "Assistant"
+                model = None
+                instructions = None
+                tools_raw: list[Any] = []
+
+                if definition:
+                    if hasattr(definition, "get"):
+                        agent_type = str(definition.get("kind", "Assistant")).title()
+                        model = definition.get("model")
+                        instructions = definition.get("instructions")
+                        tools_raw = definition.get("tools", []) or []
+                    else:
+                        agent_type = str(getattr(definition, "kind", "Assistant")).title()
+                        model = getattr(definition, "model", None)
+                        instructions = getattr(definition, "instructions", None)
+                        tools_raw = getattr(definition, "tools", []) or []
+
+                # Extract tools from definition
+                tools: list[str] = []
+                if tools_raw:
+                    for tool in tools_raw:
+                        if hasattr(tool, "get"):
+                            tool_type = tool.get("type", "")
+                        else:
+                            tool_type = getattr(tool, "type", "")
+                        if tool_type:
+                            # Format tool type nicely
+                            tools.append(str(tool_type).replace("_", " ").title())
+
+                # Extract knowledge (tool resources with file_search or similar)
+                knowledge: list[str] = []
+                for tool in tools_raw or []:
+                    if hasattr(tool, "get"):
+                        server_label = tool.get("server_label", "")
+                        if server_label and "kb" in server_label.lower():
+                            knowledge.append(server_label)
+                    else:
+                        server_label = getattr(tool, "server_label", "")
+                        if server_label and "kb" in server_label.lower():
+                            knowledge.append(server_label)
+
+                # Extract metadata for memory/guardrails
+                metadata: dict[str, Any] = {}
+                if latest_version:
+                    if hasattr(latest_version, "get"):
+                        metadata = latest_version.get("metadata", {}) or {}
+                    else:
+                        metadata = getattr(latest_version, "metadata", {}) or {}
+                memory_enabled = bool(metadata.get("memory_enabled", False) if isinstance(metadata, dict) else False)
+
+                guardrails: list[str] = []
+                if isinstance(metadata, dict):
+                    if metadata.get("content_filter"):
+                        guardrails.append("Content Filter")
+                    if metadata.get("grounding"):
+                        guardrails.append("Grounding")
 
                 agents.append(
                     Agent(
                         id=getattr(agent_data, "id", "") or "",
                         name=getattr(agent_data, "name", "") or "",
-                        agent_type="prompt",  # Default type
-                        created_at=created_at,
-                        instructions=getattr(agent_data, "instructions", None),
-                        model=getattr(agent_data, "model", None),
+                        version=version,
+                        agent_type=agent_type,
+                        created_at=self._parse_created_at(created_at_raw),
+                        description=description if description else None,
+                        model=model,
+                        instructions=instructions,
+                        tools=tools,
+                        knowledge=knowledge,
+                        memory_enabled=memory_enabled,
+                        guardrails=guardrails,
                     )
                 )
 
@@ -110,7 +272,7 @@ class ProjectClientService:
         """List model deployments in the project.
 
         Returns:
-            List of deployments.
+            List of deployments sorted by name.
 
         Raises:
             NotAuthenticated: If credential is invalid.
@@ -119,23 +281,53 @@ class ProjectClientService:
         try:
             deployments: list[Deployment] = []
 
-            # Get deployments from the inference client
-            # Note: The exact API depends on SDK version
-            conn_list = self.client.connections.list()
+            # Get deployments from the deployments API
+            deployment_list = self.client.deployments.list()
 
-            for conn in conn_list:
-                # Filter for model deployments
-                conn_type = getattr(conn, "connection_type", "")
-                if "azure_open_ai" in str(conn_type).lower():
-                    deployments.append(
-                        Deployment(
-                            name=getattr(conn, "name", "") or "",
-                            model=getattr(conn, "name", "") or "",
-                            version="",
-                            status="Ready",
-                        )
+            for dep in deployment_list:
+                # Extract sku information
+                sku = getattr(dep, "sku", None)
+                sku_name = ""
+                capacity = 0
+                if sku:
+                    if hasattr(sku, "get"):
+                        sku_name = sku.get("name", "")
+                        capacity = sku.get("capacity", 0)
+                    else:
+                        sku_name = getattr(sku, "name", "")
+                        capacity = getattr(sku, "capacity", 0)
+
+                # Format sku name nicely (e.g., "GlobalStandard" -> "Global Standard")
+                deployment_type = ""
+                if sku_name:
+                    # Insert space before capital letters
+                    deployment_type = "".join(
+                        " " + c if c.isupper() and i > 0 else c
+                        for i, c in enumerate(sku_name)
+                    ).strip()
+
+                # Extract capabilities
+                capabilities_dict = getattr(dep, "capabilities", {}) or {}
+                capabilities = [
+                    k.replace("_", " ").title()
+                    for k, v in capabilities_dict.items()
+                    if v == "true" or v is True
+                ]
+
+                deployments.append(
+                    Deployment(
+                        name=getattr(dep, "name", "") or "",
+                        model_name=getattr(dep, "model_name", "") or "",
+                        model_version=getattr(dep, "model_version", "") or "",
+                        model_publisher=getattr(dep, "model_publisher", "") or "",
+                        deployment_type=deployment_type,
+                        capacity=capacity,
+                        capabilities=capabilities,
                     )
+                )
 
+            # Sort by name
+            deployments.sort(key=lambda d: d.name.lower())
             return deployments
         except ClientAuthenticationError as e:
             raise NotAuthenticated(str(e)) from e

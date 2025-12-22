@@ -5,6 +5,7 @@ from textual.binding import Binding
 from textual.containers import Center, Container
 from textual.screen import Screen
 from textual.widgets import LoadingIndicator, Static
+from textual.worker import Worker, WorkerState, get_current_worker
 
 from anvil.services.subscriptions import Subscription, SubscriptionService
 from anvil.widgets.searchable_list import SearchableList
@@ -93,41 +94,52 @@ class SubscriptionSelectScreen(Screen[Subscription | None]):
     def on_mount(self) -> None:
         """Load subscriptions on mount."""
         self.query_one("#subscription-list", SearchableList).display = False
-        self._load_subscriptions()
+        self.run_worker(self._fetch_subscriptions, thread=True)
 
-    def _load_subscriptions(self) -> None:
-        """Fetch and display subscriptions."""
-        try:
-            self._subscriptions = self._service.list_subscriptions()
+    def _fetch_subscriptions(self) -> list[Subscription]:
+        """Fetch subscriptions in background thread."""
+        worker = get_current_worker()
+        if worker.is_cancelled:
+            return []
+        return self._service.list_subscriptions()
 
-            if not self._subscriptions:
-                self.query_one("#loading", LoadingIndicator).display = False
-                self.query_one("#status", Static).update(
-                    "No subscriptions found. Check your Azure permissions."
-                )
-                return
-
-            # Build options list
-            options: list[tuple[str, str]] = [
-                (f"{sub.display_name} ({sub.subscription_id[:8]}...)", sub.subscription_id)
-                for sub in self._subscriptions
-            ]
-
-            # Update UI
-            self.query_one("#loading", LoadingIndicator).display = False
-            self.query_one("#status", Static).update(
-                f"Found {len(self._subscriptions)} subscription(s). "
-                "Select one or type to filter."
-            )
-
-            search_list = self.query_one("#subscription-list", SearchableList)
-            search_list.display = True
-            search_list.set_options(options)
-
-        except Exception as e:
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle worker completion."""
+        if event.state == WorkerState.SUCCESS:
+            self._subscriptions = event.worker.result or []
+            self._show_subscriptions()
+        elif event.state == WorkerState.ERROR:
             self.query_one("#loading", LoadingIndicator).display = False
             self.query_one("#status", Static).update("Failed to load subscriptions.")
-            self.query_one("#error", Static).update(str(e))
+            error_widget = self.query_one("#error", Static)
+            error_widget.update(str(event.worker.error))
+            error_widget.add_class("has-error")
+
+    def _show_subscriptions(self) -> None:
+        """Display loaded subscriptions."""
+        if not self._subscriptions:
+            self.query_one("#loading", LoadingIndicator).display = False
+            self.query_one("#status", Static).update(
+                "No subscriptions found. Check your Azure permissions."
+            )
+            return
+
+        # Build options list
+        options: list[tuple[str, str]] = [
+            (f"{sub.display_name} ({sub.subscription_id[:8]}...)", sub.subscription_id)
+            for sub in self._subscriptions
+        ]
+
+        # Update UI
+        self.query_one("#loading", LoadingIndicator).display = False
+        self.query_one("#status", Static).update(
+            f"Found {len(self._subscriptions)} subscription(s). "
+            "Select one or type to filter."
+        )
+
+        search_list = self.query_one("#subscription-list", SearchableList)
+        search_list.display = True
+        search_list.set_options(options)
 
     def on_searchable_list_selected(self, event: SearchableList.Selected) -> None:
         """Handle subscription selection."""

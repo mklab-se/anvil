@@ -1,10 +1,11 @@
-"""Foundry account selection screen for Anvil TUI."""
+"""Foundry instance selection screen for Anvil TUI."""
 
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Center, Container
 from textual.screen import Screen
 from textual.widgets import LoadingIndicator, Static
+from textual.worker import Worker, WorkerState, get_current_worker
 
 from anvil.services.foundry import FoundryAccount, FoundryService
 from anvil.widgets.searchable_list import SearchableList
@@ -93,41 +94,52 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
     def on_mount(self) -> None:
         """Load accounts on mount."""
         self.query_one("#account-list", SearchableList).display = False
-        self._load_accounts()
+        self.run_worker(self._fetch_accounts, thread=True)
 
-    def _load_accounts(self) -> None:
-        """Fetch and display Foundry instances."""
-        try:
-            self._accounts = self._service.list_accounts()
+    def _fetch_accounts(self) -> list[FoundryAccount]:
+        """Fetch Foundry instances in background thread."""
+        worker = get_current_worker()
+        if worker.is_cancelled:
+            return []
+        return self._service.list_accounts()
 
-            if not self._accounts:
-                self.query_one("#loading", LoadingIndicator).display = False
-                self.query_one("#status", Static).update(
-                    "No Foundry instances found in this subscription.\n"
-                    "Create one in the Azure portal first."
-                )
-                return
-
-            # Build options list
-            options: list[tuple[str, str]] = [
-                (f"{acc.name} ({acc.location})", acc.name) for acc in self._accounts
-            ]
-
-            # Update UI
-            self.query_one("#loading", LoadingIndicator).display = False
-            self.query_one("#status", Static).update(
-                f"Found {len(self._accounts)} Foundry instance(s). "
-                "Select one or type to filter."
-            )
-
-            search_list = self.query_one("#account-list", SearchableList)
-            search_list.display = True
-            search_list.set_options(options)
-
-        except Exception as e:
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Handle worker completion."""
+        if event.state == WorkerState.SUCCESS:
+            self._accounts = event.worker.result or []
+            self._show_accounts()
+        elif event.state == WorkerState.ERROR:
             self.query_one("#loading", LoadingIndicator).display = False
             self.query_one("#status", Static).update("Failed to load Foundry instances.")
-            self.query_one("#error", Static).update(str(e))
+            error_widget = self.query_one("#error", Static)
+            error_widget.update(str(event.worker.error))
+            error_widget.add_class("has-error")
+
+    def _show_accounts(self) -> None:
+        """Display loaded Foundry instances."""
+        if not self._accounts:
+            self.query_one("#loading", LoadingIndicator).display = False
+            self.query_one("#status", Static).update(
+                "No Foundry instances found in this subscription.\n"
+                "Create one in the Azure portal first."
+            )
+            return
+
+        # Build options list
+        options: list[tuple[str, str]] = [
+            (f"{acc.name} ({acc.location})", acc.name) for acc in self._accounts
+        ]
+
+        # Update UI
+        self.query_one("#loading", LoadingIndicator).display = False
+        self.query_one("#status", Static).update(
+            f"Found {len(self._accounts)} Foundry instance(s). "
+            "Select one or type to filter."
+        )
+
+        search_list = self.query_one("#account-list", SearchableList)
+        search_list.display = True
+        search_list.set_options(options)
 
     def on_searchable_list_selected(self, event: SearchableList.Selected) -> None:
         """Handle instance selection."""

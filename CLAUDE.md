@@ -6,13 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Anvil is a Terminal User Interface (TUI) for managing Microsoft Foundry projects and resources. Built with Python and Textual framework.
 
+- **Package name**: `anvil-tui` (on PyPI)
+- **Commands**: `anvil` or `anvil-tui`
+- **Install**: `uvx anvil-tui` or `uv tool install anvil-tui`
+
 ## Commands
 
 ```bash
 # Install dependencies
 uv sync --dev
 
-# Run the application
+# Run the application (development)
 uv run anvil
 
 # Run with Textual dev console (shows CSS and widget tree)
@@ -77,3 +81,12 @@ The `pilot` object simulates user interaction (clicks, key presses). Use `app.qu
 
 - **CI** (`.github/workflows/ci.yml`): Runs on push/PR to main - lint, type check, test on Python 3.11-3.13
 - **Publish** (`.github/workflows/publish.yml`): Publishes to PyPI on GitHub release using trusted publishing
+
+## Releasing
+
+To release a new version:
+
+1. Update version in `pyproject.toml` and `src/anvil/__init__.py`
+2. Commit and push to main
+3. Create a GitHub release: `gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes"`
+4. The publish workflow automatically uploads to PyPI

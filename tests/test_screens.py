@@ -9,7 +9,7 @@ from anvil.app import AnvilApp
 from anvil.config import AppConfig, FoundrySelection
 from anvil.screens.home import HomeScreen
 from anvil.services.auth import AuthResult, AuthStatus
-from anvil.services.project_client import Agent, Deployment
+from anvil.services.project_client import Agent, Deployment, ToolConfig
 
 
 @pytest.fixture
@@ -100,9 +100,9 @@ async def test_agents_table_has_correct_columns(mock_auth_and_config) -> None:
 
         table = app.screen.query_one("#resource-table", DataTable)
 
-        # Get column labels
+        # Get column labels - includes Tools and KB count columns
         columns = [col.label.plain for col in table.columns.values()]
-        assert columns == ["Name", "Version", "Type", "Created", "Description"]
+        assert columns == ["Name", "Version", "Type", "Tools", "KB", "Created", "Description"]
 
 
 async def test_agents_table_rows_have_data(mock_auth_and_config) -> None:
@@ -121,10 +121,14 @@ async def test_agents_table_rows_have_data(mock_auth_and_config) -> None:
         row_data = table.get_row(first_row_key)
 
         # All columns should have data (not empty strings)
-        name, version, agent_type, created, description = row_data
+        # Row format: [name, version, type, tools, kb, created, description]
+        name, version, agent_type, tools, kb, created, description = row_data
         assert name, "Name should not be empty"
         assert version, "Version should not be empty"
         assert agent_type, "Type should not be empty"
+        # Tools and KB are counts, can be "0"
+        assert tools is not None, "Tools count should be present"
+        assert kb is not None, "KB count should be present"
         assert created, "Created should not be empty"
         assert description, "Description should not be empty"
 
@@ -338,7 +342,6 @@ class TestViewSwitchingRaceCondition:
         mock_event.state = WorkerState.SUCCESS
 
         populate_called = False
-        original_populate = home_screen._populate_agents_table
 
         def track_populate():
             nonlocal populate_called
@@ -424,12 +427,12 @@ class TestFormatAgentPreview:
 
         result = home_screen._format_agent_preview(agent)
 
-        assert "Instructions:" in result
+        assert "── Instructions ──" in result
         assert "..." in result  # Should be truncated
         assert len(long_instructions) > 150  # Confirm it was long enough to truncate
 
     def test_formats_tools_list(self, home_screen):
-        """Test that tools are displayed as comma-separated list."""
+        """Test that tools are displayed."""
         agent = Agent(
             id="test",
             name="Test",
@@ -447,7 +450,7 @@ class TestFormatAgentPreview:
 
         result = home_screen._format_agent_preview(agent)
 
-        assert "Tools:" in result
+        assert "── Tools ──" in result
         assert "Code Interpreter" in result
         assert "File Search" in result
         assert "Mcp" in result
@@ -471,8 +474,8 @@ class TestFormatAgentPreview:
 
         result = home_screen._format_agent_preview(agent)
 
-        assert "Tools:" in result
-        assert "None" in result
+        assert "── Tools ──" in result
+        assert "  None" in result
 
     def test_formats_knowledge_list(self, home_screen):
         """Test that knowledge bases are displayed."""
@@ -493,7 +496,7 @@ class TestFormatAgentPreview:
 
         result = home_screen._format_agent_preview(agent)
 
-        assert "Knowledge:" in result
+        assert "── Knowledge ──" in result
         assert "kb_docs" in result
         assert "kb_manuals" in result
 
@@ -563,3 +566,137 @@ class TestFormatAgentPreview:
         assert "Guardrails:" in result
         assert "Content Filter" in result
         assert "Grounding" in result
+
+    def test_format_preview_shows_temperature(self, home_screen):
+        """Test that temperature is displayed when set."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+            temperature=0.7,
+            top_p=0.95,
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "Temperature: 0.7" in result
+        assert "Top-P: 0.95" in result
+
+    def test_format_preview_shows_mcp_approval_warning(self, home_screen):
+        """Test that MCP tools with approval required show warning."""
+        tool_config = ToolConfig(
+            type="mcp",
+            display_name="Mcp",
+            server_label="kb_docs_test",
+            server_url="https://test.search.windows.net/kb",
+            require_approval="always",
+        )
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=["Mcp"],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+            requires_approval=True,
+            tool_configs=[tool_config],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "⚠ Approval required" in result  # Warning indicator with text
+        assert "docs_test" in result  # server_label with kb_ prefix stripped
+
+    def test_format_preview_shows_mcp_no_approval(self, home_screen):
+        """Test that MCP tools without approval show checkmark."""
+        tool_config = ToolConfig(
+            type="mcp",
+            display_name="Mcp",
+            server_label="kb_manuals",
+            server_url="https://test.search.windows.net/kb",
+            require_approval="never",
+        )
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=["Mcp"],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+            requires_approval=False,
+            tool_configs=[tool_config],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "✓ No approval needed" in result  # Checkmark indicator with text
+        assert "manuals" in result  # server_label with kb_ prefix stripped
+        # Should NOT show approval required text
+        assert "Approval required" not in result
+
+    def test_format_preview_shows_version_and_id(self, home_screen):
+        """Test that agent version and ID are displayed."""
+        agent = Agent(
+            id="asst_abc123",
+            name="Test",
+            version="4",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "── IDs ──" in result
+        assert "Agent: asst_abc123" in result
+        assert "Version: 4" in result
+
+    def test_format_preview_shows_metadata(self, home_screen):
+        """Test that custom metadata is displayed when present."""
+        agent = Agent(
+            id="test",
+            name="Test",
+            version="1",
+            agent_type="Prompt",
+            created_at=datetime.now(),
+            description=None,
+            model="gpt-4o",
+            instructions=None,
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+            full_metadata={"custom_key": "custom_value"},
+        )
+
+        result = home_screen._format_agent_preview(agent)
+
+        assert "── Metadata ──" in result
+        assert "custom_key: custom_value" in result

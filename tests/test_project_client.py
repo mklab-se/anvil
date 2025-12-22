@@ -38,6 +38,8 @@ class TestListAgentsParsing:
         created_at: int = 1734500000,
         tools: list | None = None,
         metadata: dict | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
     ) -> MagicMock:
         """Create a mock agent with the real Azure SDK structure.
 
@@ -56,6 +58,8 @@ class TestListAgentsParsing:
                         "kind": "prompt",
                         "model": "gpt-4o",
                         "instructions": "...",
+                        "temperature": 1,
+                        "top_p": 1,
                         "tools": [...]
                     }
                 }
@@ -67,18 +71,26 @@ class TestListAgentsParsing:
         mock_agent.name = name
 
         # Create the nested versions structure (dict-like)
+        definition = {
+            "kind": kind,
+            "model": model,
+            "instructions": instructions,
+            "tools": tools or [],
+        }
+
+        # Add optional temperature and top_p if provided
+        if temperature is not None:
+            definition["temperature"] = temperature
+        if top_p is not None:
+            definition["top_p"] = top_p
+
         mock_agent.versions = {
             "latest": {
                 "version": version,
                 "created_at": created_at,
                 "description": description,
                 "metadata": metadata or {},
-                "definition": {
-                    "kind": kind,
-                    "model": model,
-                    "instructions": instructions,
-                    "tools": tools or [],
-                }
+                "definition": definition,
             }
         }
 
@@ -269,6 +281,170 @@ class TestListAgentsParsing:
         agents = service.list_agents()
 
         assert agents[0].memory_enabled is False
+
+    def test_parses_temperature_and_top_p(self, service, mock_client):
+        """Test that temperature and top_p are parsed from definition."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            temperature=0.7,
+            top_p=0.95,
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+
+        assert agents[0].temperature == 0.7
+        assert agents[0].top_p == 0.95
+
+    def test_parses_mcp_tool_approval_always(self, service, mock_client):
+        """Test parsing MCP tool with require_approval=always."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            tools=[
+                {
+                    "type": "mcp",
+                    "server_label": "kb_docs_test",
+                    "server_url": "https://test.search.windows.net/kb",
+                    "require_approval": "always",
+                    "project_connection_id": "kb-docs-test",
+                }
+            ],
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+        agent = agents[0]
+
+        assert agent.requires_approval is True
+        assert agent.tool_configs is not None
+        assert len(agent.tool_configs) == 1
+        assert agent.tool_configs[0].type == "mcp"
+        assert agent.tool_configs[0].require_approval == "always"
+        assert agent.tool_configs[0].server_label == "kb_docs_test"
+
+    def test_parses_mcp_tool_approval_never(self, service, mock_client):
+        """Test parsing MCP tool with require_approval=never."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            tools=[
+                {
+                    "type": "mcp",
+                    "server_label": "kb_manuals",
+                    "server_url": "https://test.search.windows.net/kb",
+                    "require_approval": "never",
+                    "project_connection_id": "kb-manuals",
+                }
+            ],
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+        agent = agents[0]
+
+        assert agent.requires_approval is False
+        assert agent.tool_configs is not None
+        assert agent.tool_configs[0].require_approval == "never"
+
+    def test_requires_approval_true_when_any_tool_requires(self, service, mock_client):
+        """Test that requires_approval is True when any tool requires approval."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            tools=[
+                {"type": "code_interpreter"},
+                {
+                    "type": "mcp",
+                    "server_label": "kb_docs",
+                    "require_approval": "always",
+                },
+            ],
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+
+        assert agents[0].requires_approval is True
+
+    def test_requires_approval_false_when_all_never(self, service, mock_client):
+        """Test that requires_approval is False when no tools require approval."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            tools=[
+                {"type": "code_interpreter"},
+                {
+                    "type": "mcp",
+                    "server_label": "kb_docs",
+                    "require_approval": "never",
+                },
+            ],
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+
+        assert agents[0].requires_approval is False
+
+    def test_parses_tool_configs_with_details(self, service, mock_client):
+        """Test that tool_configs contain full tool details."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            tools=[
+                {"type": "code_interpreter"},
+                {
+                    "type": "mcp",
+                    "server_label": "kb_test_kb",
+                    "server_url": "https://test.search.windows.net/kb",
+                    "require_approval": "always",
+                    "project_connection_id": "kb-test",
+                },
+            ],
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+        agent = agents[0]
+
+        assert agent.tool_configs is not None
+        assert len(agent.tool_configs) == 2
+
+        # First tool should be code interpreter
+        assert agent.tool_configs[0].type == "code_interpreter"
+        assert agent.tool_configs[0].display_name == "Code Interpreter"
+
+        # Second tool should be MCP with full details
+        mcp_tool = agent.tool_configs[1]
+        assert mcp_tool.type == "mcp"
+        assert mcp_tool.server_label == "kb_test_kb"
+        assert mcp_tool.server_url == "https://test.search.windows.net/kb"
+        assert mcp_tool.project_connection_id == "kb-test"
+
+    def test_parses_full_metadata(self, service, mock_client):
+        """Test that full_metadata contains all metadata keys."""
+        mock_agent = self._create_mock_agent(
+            agent_id="test",
+            name="test",
+            metadata={"custom_key": "custom_value", "another_key": "another_value"},
+        )
+
+        mock_client.return_value.agents.list.return_value = [mock_agent]
+
+        agents = service.list_agents()
+        agent = agents[0]
+
+        assert agent.full_metadata is not None
+        assert agent.full_metadata["custom_key"] == "custom_value"
+        assert agent.full_metadata["another_key"] == "another_value"
 
 
 class TestAgentDataclass:

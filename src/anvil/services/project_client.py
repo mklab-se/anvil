@@ -12,6 +12,26 @@ from anvil.services.exceptions import NetworkError, NotAuthenticated
 
 
 @dataclass
+class ToolConfig:
+    """Detailed tool configuration."""
+
+    type: str  # "code_interpreter", "file_search", "mcp", etc.
+    display_name: str  # Formatted name for display
+
+    # MCP-specific fields
+    server_label: str | None = None
+    server_url: str | None = None
+    require_approval: str | None = None  # "always", "never", or selective
+    project_connection_id: str | None = None
+
+    # FileSearch-specific
+    vector_store_ids: list[str] | None = None
+
+    # CodeInterpreter-specific
+    file_ids: list[str] | None = None
+
+
+@dataclass
 class Agent:
     """Agent information."""
 
@@ -23,10 +43,17 @@ class Agent:
     description: str | None
     model: str | None
     instructions: str | None
-    tools: list[str]
+    tools: list[str]  # Tool type names (for backward compatibility)
     knowledge: list[str]
     memory_enabled: bool
     guardrails: list[str]
+
+    # New detailed fields
+    temperature: float | None = None
+    top_p: float | None = None
+    requires_approval: bool = False  # Whether ANY tool requires approval
+    tool_configs: list[ToolConfig] | None = None  # Full tool configurations
+    full_metadata: dict[str, str] | None = None  # All custom metadata
 
 
 @dataclass
@@ -192,6 +219,8 @@ class ProjectClientService:
                 model = None
                 instructions = None
                 tools_raw: list[Any] = []
+                temperature: float | None = None
+                top_p: float | None = None
 
                 if definition:
                     if hasattr(definition, "get"):
@@ -199,23 +228,56 @@ class ProjectClientService:
                         model = definition.get("model")
                         instructions = definition.get("instructions")
                         tools_raw = definition.get("tools", []) or []
+                        temperature = definition.get("temperature")
+                        top_p = definition.get("top_p")
                     else:
                         agent_type = str(getattr(definition, "kind", "Assistant")).title()
                         model = getattr(definition, "model", None)
                         instructions = getattr(definition, "instructions", None)
                         tools_raw = getattr(definition, "tools", []) or []
+                        temperature = getattr(definition, "temperature", None)
+                        top_p = getattr(definition, "top_p", None)
 
-                # Extract tools from definition
+                # Extract tools from definition - both simple list and full configs
                 tools: list[str] = []
+                tool_configs: list[ToolConfig] = []
+                requires_approval = False
+
                 if tools_raw:
                     for tool in tools_raw:
+                        # Get tool type
                         if hasattr(tool, "get"):
                             tool_type = tool.get("type", "")
+                            server_label = tool.get("server_label")
+                            server_url = tool.get("server_url")
+                            require_approval = tool.get("require_approval")
+                            project_connection_id = tool.get("project_connection_id")
                         else:
                             tool_type = getattr(tool, "type", "")
+                            server_label = getattr(tool, "server_label", None)
+                            server_url = getattr(tool, "server_url", None)
+                            require_approval = getattr(tool, "require_approval", None)
+                            project_connection_id = getattr(tool, "project_connection_id", None)
+
                         if tool_type:
-                            # Format tool type nicely
-                            tools.append(str(tool_type).replace("_", " ").title())
+                            # Format tool type nicely for display
+                            display_name = str(tool_type).replace("_", " ").title()
+                            tools.append(display_name)
+
+                            # Build full ToolConfig
+                            tool_config = ToolConfig(
+                                type=str(tool_type),
+                                display_name=display_name,
+                                server_label=server_label,
+                                server_url=server_url,
+                                require_approval=require_approval,
+                                project_connection_id=project_connection_id,
+                            )
+                            tool_configs.append(tool_config)
+
+                            # Check if any tool requires approval
+                            if require_approval == "always":
+                                requires_approval = True
 
                 # Extract knowledge (tool resources with file_search or similar)
                 knowledge: list[str] = []
@@ -245,6 +307,11 @@ class ProjectClientService:
                     if metadata.get("grounding"):
                         guardrails.append("Grounding")
 
+                # Convert metadata to string dict for full_metadata
+                full_metadata: dict[str, str] | None = None
+                if metadata and isinstance(metadata, dict):
+                    full_metadata = {str(k): str(v) for k, v in metadata.items()}
+
                 agents.append(
                     Agent(
                         id=getattr(agent_data, "id", "") or "",
@@ -259,6 +326,11 @@ class ProjectClientService:
                         knowledge=knowledge,
                         memory_enabled=memory_enabled,
                         guardrails=guardrails,
+                        temperature=temperature,
+                        top_p=top_p,
+                        requires_approval=requires_approval,
+                        tool_configs=tool_configs if tool_configs else None,
+                        full_metadata=full_metadata,
                     )
                 )
 

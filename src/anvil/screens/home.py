@@ -312,10 +312,16 @@ class HomeScreen(Screen[None]):
             if len(description) > 40:
                 description = description[:37] + "..."
 
+            # Count tools and knowledge bases
+            tools_count = str(len(agent.tools)) if agent.tools else "0"
+            kb_count = str(len(agent.knowledge)) if agent.knowledge else "0"
+
             table.add_row(
                 agent.name,
                 agent.version,
                 agent.agent_type,
+                tools_count,
+                kb_count,
                 created_str,
                 description,
                 key=agent.id,
@@ -325,7 +331,7 @@ class HomeScreen(Screen[None]):
         """Configure the table for Agents resource."""
         table = self.query_one("#resource-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("Name", "Version", "Type", "Created", "Description")
+        table.add_columns("Name", "Version", "Type", "Tools", "KB", "Created", "Description")
 
     def _setup_models_table(self) -> None:
         """Configure the table for Models resource."""
@@ -489,42 +495,81 @@ class HomeScreen(Screen[None]):
         """Format agent details for the preview panel."""
         lines = []
 
-        # Model
-        lines.append(f"[b]Model:[/b] {agent.model or 'Not set'}")
+        # ── Configuration ──
+        lines.append("[b]── Configuration ──[/b]")
+        lines.append(f"Model: {agent.model or 'Not set'}")
+        if agent.temperature is not None:
+            lines.append(f"Temperature: {agent.temperature}")
+        if agent.top_p is not None:
+            lines.append(f"Top-P: {agent.top_p}")
 
-        # Instructions (truncated with indicator)
+        # ── Instructions ──
+        lines.append("\n[b]── Instructions ──[/b]")
         if agent.instructions:
             instructions = agent.instructions
             if len(instructions) > 150:
                 instructions = instructions[:147] + "..."
-            lines.append(f"\n[b]Instructions:[/b]\n{instructions}")
+            lines.append(instructions)
         else:
-            lines.append("\n[b]Instructions:[/b] None")
+            lines.append("None")
 
-        # Tools
-        if agent.tools:
-            tools_str = ", ".join(agent.tools)
-            lines.append(f"\n[b]Tools:[/b]\n{tools_str}")
+        # ── Tools ──
+        lines.append("\n[b]── Tools ──[/b]")
+        if agent.tool_configs:
+            for tool in agent.tool_configs:
+                # Format indicator based on approval status
+                if tool.type == "mcp":
+                    # Show MCP tool with server label
+                    label = tool.server_label or "unknown"
+                    # Trim kb_ prefix for cleaner display
+                    if label.startswith("kb_"):
+                        label = label[3:]
+                    lines.append(f"  MCP: {label}")
+                    # Show approval status on separate line
+                    if tool.require_approval == "always":
+                        lines.append("    ⚠ Approval required")
+                    else:
+                        lines.append("    ✓ No approval needed")
+                else:
+                    lines.append(f"  {tool.display_name}")
+        elif agent.tools:
+            # Fallback to simple tool names
+            for tool_name in agent.tools:
+                lines.append(f"  {tool_name}")
         else:
-            lines.append("\n[b]Tools:[/b] None")
+            lines.append("  None")
 
-        # Knowledge
+        # ── Knowledge ──
+        lines.append("\n[b]── Knowledge ──[/b]")
         if agent.knowledge:
-            knowledge_str = "\n".join(f"  - {k[:20]}..." if len(k) > 20 else f"  - {k}" for k in agent.knowledge)
-            lines.append(f"\n[b]Knowledge:[/b]\n{knowledge_str}")
+            for k in agent.knowledge:
+                display_k = k[:25] + "..." if len(k) > 25 else k
+                lines.append(f"  - {display_k}")
         else:
-            lines.append("\n[b]Knowledge:[/b] None")
+            lines.append("  None")
 
-        # Memory
+        # ── Safety & Settings ──
+        lines.append("\n[b]── Safety & Settings ──[/b]")
         memory_status = "Enabled" if agent.memory_enabled else "Disabled"
-        lines.append(f"\n[b]Memory:[/b] {memory_status}")
-
-        # Guardrails
+        lines.append(f"Memory: {memory_status}")
         if agent.guardrails:
             guardrails_str = ", ".join(agent.guardrails)
-            lines.append(f"\n[b]Guardrails:[/b]\n{guardrails_str}")
+            lines.append(f"Guardrails: {guardrails_str}")
         else:
-            lines.append("\n[b]Guardrails:[/b] None")
+            lines.append("Guardrails: None")
+
+        # ── Metadata ──
+        if agent.full_metadata and len(agent.full_metadata) > 0:
+            lines.append("\n[b]── Metadata ──[/b]")
+            for key, value in agent.full_metadata.items():
+                # Truncate long values
+                display_value = value[:30] + "..." if len(value) > 30 else value
+                lines.append(f"  {key}: {display_value}")
+
+        # ── IDs ──
+        lines.append("\n[b]── IDs ──[/b]")
+        lines.append(f"Agent: {agent.id}")
+        lines.append(f"Version: {agent.version}")
 
         return "\n".join(lines)
 
@@ -540,6 +585,7 @@ class HomeScreen(Screen[None]):
         content = self.query_one("#preview-content", Static)
 
         if self._current_resource == "agents" and row_data:
+            # Row format: [name, version, type, tools, kb, created, description]
             name = row_data[0]
             title.update(str(name))
 
@@ -549,10 +595,12 @@ class HomeScreen(Screen[None]):
                 content.update(self._format_agent_preview(agent))
             else:
                 # Fallback for placeholder data
-                _, version, agent_type, created, description = row_data
+                _, version, agent_type, tools, kb, created, description = row_data
                 content.update(
                     f"[b]Version:[/b] {version}\n"
                     f"[b]Type:[/b] {agent_type}\n"
+                    f"[b]Tools:[/b] {tools}\n"
+                    f"[b]Knowledge:[/b] {kb}\n"
                     f"[b]Created:[/b] {created}\n"
                     f"[b]Description:[/b] {description}\n\n"
                     "[dim]Press Enter to edit[/dim]\n"
@@ -589,6 +637,7 @@ class HomeScreen(Screen[None]):
             content = self.query_one("#preview-content", Static)
 
             if self._current_resource == "agents" and row_data:
+                # Row format: [name, version, type, tools, kb, created, description]
                 name = row_data[0]
                 title.update(str(name))
 
@@ -598,10 +647,12 @@ class HomeScreen(Screen[None]):
                     content.update(self._format_agent_preview(agent))
                 else:
                     # Fallback for placeholder data
-                    _, version, agent_type, created, description = row_data
+                    _, version, agent_type, tools, kb, created, description = row_data
                     content.update(
                         f"[b]Version:[/b] {version}\n"
                         f"[b]Type:[/b] {agent_type}\n"
+                        f"[b]Tools:[/b] {tools}\n"
+                        f"[b]Knowledge:[/b] {kb}\n"
                         f"[b]Created:[/b] {created}\n"
                         f"[b]Description:[/b] {description}\n\n"
                         "[dim]Press Enter to edit[/dim]\n"

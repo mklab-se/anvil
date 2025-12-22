@@ -29,8 +29,7 @@ class ProjectSelectScreen(Screen[FoundryProject | None]):
     #select-container {
         width: 80;
         height: auto;
-        max-height: 90%;
-        padding: 1 2 2 2;
+        padding: 1 2;
         border: solid $primary;
         background: $surface;
     }
@@ -39,33 +38,31 @@ class ProjectSelectScreen(Screen[FoundryProject | None]):
         text-align: center;
         text-style: bold;
         color: $primary;
-        padding-bottom: 1;
+        margin-bottom: 1;
     }
 
     #account-info {
         text-align: center;
         color: $text-muted;
-        padding-bottom: 1;
     }
 
     #status {
         text-align: center;
         color: $text-muted;
-        padding-bottom: 1;
     }
 
     #error {
         text-align: center;
         color: $error;
-        padding: 1;
+        display: none;
+    }
+
+    #error.has-error {
+        display: block;
     }
 
     #loading {
         height: 3;
-    }
-
-    SearchableList {
-        margin-top: 1;
     }
     """
 

@@ -16,24 +16,15 @@ class SearchableList[T](Widget):
     DEFAULT_CSS = """
     SearchableList {
         height: auto;
-        max-height: 100%;
     }
 
     SearchableList > Vertical {
         height: auto;
-        max-height: 100%;
-    }
-
-    SearchableList Input {
-        margin-bottom: 1;
     }
 
     SearchableList OptionList {
-        height: 8;
-    }
-
-    SearchableList .highlighted {
-        background: $primary-darken-2;
+        height: 10;
+        border: solid $primary-darken-2;
     }
     """
 

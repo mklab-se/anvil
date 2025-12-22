@@ -1,0 +1,68 @@
+/* Anvil TUI Styles */
+
+Screen {
+    background: $surface;
+}
+
+#home-container {
+    width: 100%;
+    height: 100%;
+    padding: 1;
+}
+
+#welcome-title {
+    text-align: center;
+    text-style: bold;
+    color: $primary;
+    padding: 1 0;
+}
+
+#welcome-subtitle {
+    text-align: center;
+    color: $text-muted;
+    padding-bottom: 1;
+}
+
+#main-content {
+    width: 100%;
+    height: 100%;
+}
+
+#sidebar {
+    width: 25;
+    height: 100%;
+    border-right: solid $primary;
+    padding: 1;
+}
+
+#content-area {
+    width: 100%;
+    height: 100%;
+    padding: 1 2;
+}
+
+.section-header {
+    text-style: bold;
+    color: $secondary;
+    padding-bottom: 1;
+}
+
+#nav-list {
+    height: auto;
+}
+
+#nav-list > ListItem {
+    padding: 0 1;
+}
+
+#nav-list > ListItem:hover {
+    background: $primary 20%;
+}
+
+#nav-list > ListItem.-selected {
+    background: $primary 40%;
+}
+
+#getting-started-text {
+    color: $text;
+}

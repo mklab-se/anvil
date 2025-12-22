@@ -13,6 +13,11 @@ from textual.widgets import Static
 if TYPE_CHECKING:
     from textual.events import Click
 
+SIDEBAR_LOGO = """\
+▄▀█ █▄ █ █ █ █ █
+█▀█ █ ▀█ ▀▄▀ █ █▄▄▄\
+"""
+
 
 class SidebarItem(Static):
     """A single item in the sidebar."""
@@ -81,6 +86,23 @@ class SidebarItem(Static):
             self.remove_class("selected")
 
 
+class SidebarLogo(Static):
+    """The Anvil logo at the top of the sidebar."""
+
+    DEFAULT_CSS = """
+    SidebarLogo {
+        width: 100%;
+        height: 3;
+        color: $primary;
+        padding: 0 1;
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(SIDEBAR_LOGO, **kwargs)
+
+
 class SidebarSeparator(Static):
     """A separator line in the sidebar."""
 
@@ -95,7 +117,7 @@ class SidebarSeparator(Static):
 
     def render(self) -> str:
         """Render a horizontal line."""
-        return "─" * 12
+        return "─" * 18
 
 
 class Sidebar(Widget, can_focus=True):
@@ -103,7 +125,7 @@ class Sidebar(Widget, can_focus=True):
 
     DEFAULT_CSS = """
     Sidebar {
-        width: 16;
+        width: 22;
         height: 100%;
         background: $surface;
         border-right: solid $panel;
@@ -163,6 +185,7 @@ class Sidebar(Widget, can_focus=True):
 
     def compose(self) -> ComposeResult:
         """Create sidebar items."""
+        yield SidebarLogo()
         with Vertical():
             for item in self.RESOURCES:
                 if item is None:

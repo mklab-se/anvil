@@ -208,17 +208,23 @@ class HomeScreen(Screen[None]):
         if event.worker.name == "fetch_agents":
             if event.state == WorkerState.SUCCESS:
                 self._agents = event.worker.result or []
-                self._populate_agents_table()
+                # Only populate if we're still on agents view
+                if self._current_resource == "agents":
+                    self._populate_agents_table()
             elif event.state == WorkerState.ERROR:
                 self.notify(f"Failed to load agents: {event.worker.error}", severity="error")
-                self._load_placeholder_data()
+                if self._current_resource == "agents":
+                    self._load_placeholder_data()
         elif event.worker.name == "fetch_deployments":
             if event.state == WorkerState.SUCCESS:
                 self._deployments = event.worker.result or []
-                self._populate_models_table()
+                # Only populate if we're still on models view
+                if self._current_resource == "models":
+                    self._populate_models_table()
             elif event.state == WorkerState.ERROR:
                 self.notify(f"Failed to load models: {event.worker.error}", severity="error")
-                self._load_placeholder_models()
+                if self._current_resource == "models":
+                    self._load_placeholder_models()
 
     def _load_models(self) -> None:
         """Load model deployments from the SDK using a background worker."""
@@ -395,8 +401,17 @@ class HomeScreen(Screen[None]):
         elif self._current_resource == "models":
             self._load_placeholder_models()
 
+    def _cancel_pending_workers(self) -> None:
+        """Cancel any running data fetch workers."""
+        for worker in self.workers:
+            if worker.name in ("fetch_agents", "fetch_deployments"):
+                worker.cancel()
+
     def on_sidebar_selected(self, event: Sidebar.Selected) -> None:
         """Handle sidebar navigation."""
+        # Cancel any pending data fetches to prevent race conditions
+        self._cancel_pending_workers()
+
         self._current_resource = event.resource_id
         title = self.query_one("#resource-title", Static)
 

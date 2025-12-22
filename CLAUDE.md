@@ -102,10 +102,12 @@ The `pilot` object simulates user interaction (clicks, key presses). Use `app.qu
 
 #### Testing Best Practices
 
-1. **Always mock external APIs** - Use `unittest.mock` to simulate SDK responses with the real data structure
-2. **Test the actual SDK response format** - When integrating with Azure SDKs, first inspect what the API actually returns (nested structures, dict-like objects, etc.) and create mock fixtures that match
-3. **Test edge cases** - Empty lists, None values, missing fields
-4. **Test formatting functions** - Sidebar previews, table displays, truncation logic
+1. **Always add tests for new features and bug fixes** - When implementing a new feature or fixing a bug, consider what tests would catch regressions. This is mandatory, not optional.
+2. **Always mock external APIs** - Use `unittest.mock` to simulate SDK responses with the real data structure
+3. **Test the actual SDK response format** - When integrating with Azure SDKs, first inspect what the API actually returns (nested structures, dict-like objects, etc.) and create mock fixtures that match
+4. **Test edge cases** - Empty lists, None values, missing fields
+5. **Test race conditions** - When async workers or background tasks are involved, test that data doesn't leak between views
+6. **Test formatting functions** - Sidebar previews, table displays, truncation logic
 
 Example of mocking Azure SDK responses:
 

@@ -68,7 +68,7 @@ async def test_app_starts(mock_auth_authenticated, mock_config_with_selection) -
     app = AnvilApp()
     async with app.run_test():
         assert app.title == "Anvil"
-        assert app.sub_title == "Microsoft Foundry Manager"
+        assert app.sub_title == "Your tool in the foundry"
 
 
 async def test_app_goes_to_home_with_cached_selection(

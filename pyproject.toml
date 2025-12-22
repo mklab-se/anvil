@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "anvil-tui"
-version = "0.1.1"
+version = "0.1.2"
 description = "Terminal User Interface for managing Microsoft Foundry projects and resources"
 readme = "README.md"
 license = "MIT"

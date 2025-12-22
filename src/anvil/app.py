@@ -39,7 +39,7 @@ class AnvilApp(App[None]):
     """Anvil - Microsoft Foundry TUI manager."""
 
     TITLE = "Anvil"
-    SUB_TITLE = "Microsoft Foundry Manager"
+    SUB_TITLE = "Your tool in the foundry"
     CSS_PATH = "styles/app.tcss"
 
     BINDINGS = [  # noqa: RUF012

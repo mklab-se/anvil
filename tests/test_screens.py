@@ -1,7 +1,7 @@
 """Tests for Anvil screens."""
 
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -9,7 +9,7 @@ from anvil.app import AnvilApp
 from anvil.config import AppConfig, FoundrySelection
 from anvil.screens.home import HomeScreen
 from anvil.services.auth import AuthResult, AuthStatus
-from anvil.services.project_client import Agent
+from anvil.services.project_client import Agent, Deployment
 
 
 @pytest.fixture
@@ -193,6 +193,164 @@ async def test_agent_lookup_by_id(mock_auth_and_config) -> None:
             assert found_agent is not None, "Should find agent by ID"
             assert found_agent.id == first_agent.id
             assert found_agent.name == first_agent.name
+
+
+class TestViewSwitchingRaceCondition:
+    """Tests for race conditions when switching between views quickly."""
+
+    @pytest.fixture
+    def home_screen(self):
+        """Create a HomeScreen for testing."""
+        return HomeScreen()
+
+    @pytest.fixture
+    def sample_agents(self):
+        """Create sample agents for testing."""
+        return [
+            Agent(
+                id="agent-1",
+                name="Test Agent",
+                version="1",
+                agent_type="Prompt",
+                created_at=datetime.now(),
+                description="Test",
+                model="gpt-4o",
+                instructions=None,
+                tools=[],
+                knowledge=[],
+                memory_enabled=False,
+                guardrails=[],
+            )
+        ]
+
+    @pytest.fixture
+    def sample_deployments(self):
+        """Create sample deployments for testing."""
+        return [
+            Deployment(
+                name="gpt-4o",
+                model_name="gpt-4o",
+                model_version="2024-08-06",
+                model_publisher="OpenAI",
+                deployment_type="Global Standard",
+                capacity=100,
+                capabilities=["Chat Completion"],
+            )
+        ]
+
+    def test_agents_not_populated_when_on_models_view(self, home_screen, sample_agents):
+        """Test that agent data doesn't populate table when user switched to models view.
+
+        This catches the race condition where:
+        1. User is on agents view, agents start loading
+        2. User switches to models view
+        3. Agents finish loading - they should NOT populate the models table
+        """
+        from textual.worker import Worker, WorkerState
+
+        # Simulate being on models view when agents finish loading
+        home_screen._current_resource = "models"
+        home_screen._agents = []  # No agents loaded yet
+
+        # Create a mock worker that completed with agent results
+        mock_worker = MagicMock(spec=Worker)
+        mock_worker.name = "fetch_agents"
+        mock_worker.result = sample_agents
+
+        # Create state changed event
+        mock_event = MagicMock()
+        mock_event.worker = mock_worker
+        mock_event.state = WorkerState.SUCCESS
+
+        # Track if _populate_agents_table was called
+        populate_called = False
+        original_populate = home_screen._populate_agents_table
+
+        def track_populate():
+            nonlocal populate_called
+            populate_called = True
+            original_populate()
+
+        home_screen._populate_agents_table = track_populate
+
+        # Trigger the worker completion handler
+        home_screen.on_worker_state_changed(mock_event)
+
+        # Agents data should be stored but table should NOT be populated
+        assert home_screen._agents == sample_agents, "Agent data should still be stored"
+        assert not populate_called, "Table should NOT be populated when on models view"
+
+    def test_deployments_not_populated_when_on_agents_view(self, home_screen, sample_deployments):
+        """Test that deployment data doesn't populate table when user switched to agents view.
+
+        This catches the race condition where:
+        1. User is on models view, deployments start loading
+        2. User switches to agents view
+        3. Deployments finish loading - they should NOT populate the agents table
+        """
+        from textual.worker import Worker, WorkerState
+
+        # Simulate being on agents view when deployments finish loading
+        home_screen._current_resource = "agents"
+        home_screen._deployments = []  # No deployments loaded yet
+
+        # Create a mock worker that completed with deployment results
+        mock_worker = MagicMock(spec=Worker)
+        mock_worker.name = "fetch_deployments"
+        mock_worker.result = sample_deployments
+
+        # Create state changed event
+        mock_event = MagicMock()
+        mock_event.worker = mock_worker
+        mock_event.state = WorkerState.SUCCESS
+
+        # Track if _populate_models_table was called
+        populate_called = False
+        original_populate = home_screen._populate_models_table
+
+        def track_populate():
+            nonlocal populate_called
+            populate_called = True
+            original_populate()
+
+        home_screen._populate_models_table = track_populate
+
+        # Trigger the worker completion handler
+        home_screen.on_worker_state_changed(mock_event)
+
+        # Deployment data should be stored but table should NOT be populated
+        assert home_screen._deployments == sample_deployments, "Deployment data should still be stored"
+        assert not populate_called, "Table should NOT be populated when on agents view"
+
+    def test_agents_populated_when_still_on_agents_view(self, home_screen, sample_agents):
+        """Test that agent data DOES populate table when still on agents view."""
+        from textual.worker import Worker, WorkerState
+
+        # Simulate still being on agents view when agents finish loading
+        home_screen._current_resource = "agents"
+
+        mock_worker = MagicMock(spec=Worker)
+        mock_worker.name = "fetch_agents"
+        mock_worker.result = sample_agents
+
+        mock_event = MagicMock()
+        mock_event.worker = mock_worker
+        mock_event.state = WorkerState.SUCCESS
+
+        populate_called = False
+        original_populate = home_screen._populate_agents_table
+
+        def track_populate():
+            nonlocal populate_called
+            populate_called = True
+            # Don't call original - it needs a mounted widget
+
+        home_screen._populate_agents_table = track_populate
+
+        home_screen.on_worker_state_changed(mock_event)
+
+        assert home_screen._agents == sample_agents
+        assert populate_called, "Table SHOULD be populated when still on agents view"
 
 
 class TestFormatAgentPreview:

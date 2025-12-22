@@ -44,6 +44,10 @@ uv run mypy src
 
 Before starting any implementation, run `uv run pytest && uv run ruff check src tests && uv run mypy src` to ensure the codebase is in a working state. After completing changes, run the same commands to verify nothing broke. This keeps the system stable and gives you a solid foundation.
 
+### Dependencies Philosophy
+
+Always use the latest Python libraries in this project. The core purpose of Anvil is to provide an up-to-date user interface with the latest APIs, even when the official Microsoft portal doesn't yet support them. Don't hold back on using new library versions or features.
+
 ## Architecture
 
 ### Textual Framework Pattern

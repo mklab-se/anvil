@@ -30,9 +30,7 @@ def mock_auth_and_config():
         patch("anvil.app.ConfigManager") as mock_config_cls,
     ):
         mock_auth = mock_auth_cls.return_value
-        mock_auth.check_auth_status.return_value = AuthResult(
-            status=AuthStatus.AUTHENTICATED
-        )
+        mock_auth.check_auth_status.return_value = AuthResult(status=AuthStatus.AUTHENTICATED)
         mock_auth.is_authenticated.return_value = True
 
         mock_config = mock_config_cls.return_value

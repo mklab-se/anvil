@@ -73,9 +73,7 @@ class ConfigManager:
 
         # Add to recent selections (avoid duplicates by project endpoint)
         recent = [
-            s
-            for s in config.recent_selections
-            if s.project_endpoint != selection.project_endpoint
+            s for s in config.recent_selections if s.project_endpoint != selection.project_endpoint
         ]
         recent.insert(0, selection)
         config.recent_selections = recent[: self.MAX_RECENT_SELECTIONS]

@@ -98,9 +98,7 @@ class FoundryService:
         except HttpResponseError as e:
             raise NetworkError(f"Failed to list Foundry accounts: {e}") from e
 
-    def list_projects(
-        self, resource_group: str, account_name: str
-    ) -> list[FoundryProject]:
+    def list_projects(self, resource_group: str, account_name: str) -> list[FoundryProject]:
         """List projects within a Foundry account.
 
         Args:

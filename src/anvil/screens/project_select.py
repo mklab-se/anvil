@@ -89,9 +89,7 @@ class ProjectSelectScreen(Screen[FoundryProject | None]):
     def compose(self) -> ComposeResult:
         with Center(), Container(id="select-container"):
             yield Static("Select Foundry Project", id="screen-title")
-            yield Static(
-                f"Account: {self._account.name}", id="account-info"
-            )
+            yield Static(f"Account: {self._account.name}", id="account-info")
             yield Static("Loading projects...", id="status")
             yield Static("", id="error")
             with Center():
@@ -134,8 +132,7 @@ class ProjectSelectScreen(Screen[FoundryProject | None]):
         if not self._projects:
             self.query_one("#loading", LoadingIndicator).display = False
             self.query_one("#status", Static).update(
-                "No projects found in this instance.\n"
-                "Create one in the Azure portal first."
+                "No projects found in this instance.\nCreate one in the Azure portal first."
             )
             return
 
@@ -147,8 +144,7 @@ class ProjectSelectScreen(Screen[FoundryProject | None]):
         # Update UI
         self.query_one("#loading", LoadingIndicator).display = False
         self.query_one("#status", Static).update(
-            f"Found {len(self._projects)} project(s). "
-            "Select one or type to filter."
+            f"Found {len(self._projects)} project(s). Select one or type to filter."
         )
 
         search_list = self.query_one("#project-list", SearchableList)

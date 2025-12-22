@@ -4,6 +4,7 @@ from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.design import ColorSystem
 from textual.widgets import Footer, Header
 
 from anvil.config import ConfigManager, FoundrySelection
@@ -15,6 +16,21 @@ from anvil.screens.subscription_select import SubscriptionSelectScreen
 from anvil.services.auth import AuthService, AuthStatus
 from anvil.services.foundry import FoundryAccount, FoundryProject, FoundryService
 from anvil.services.subscriptions import Subscription, SubscriptionService
+
+# MKLab brand colors (Gruvbox-inspired dark theme)
+MKLAB_THEME = ColorSystem(
+    primary="#d65d0e",  # Burnt Orange - primary accent
+    secondary="#689d6a",  # Aqua - secondary accent
+    warning="#d79921",  # Golden Yellow
+    error="#cc241d",  # Deep Red
+    success="#689d6a",  # Aqua (same as secondary)
+    accent="#b16286",  # Dusty Purple - experimental
+    foreground="#fffbec",  # Almost White
+    background="#0f0f0f",  # Near Black
+    surface="#1a1a1a",  # Dark Gray
+    panel="#2a2a2a",  # Charcoal
+    dark=True,
+)
 
 
 class AnvilApp(App[None]):
@@ -36,6 +52,8 @@ class AnvilApp(App[None]):
         self.auth_service = AuthService()
         self.config_manager = ConfigManager()
         self.current_selection: FoundrySelection | None = None
+        # Register MKLab brand theme
+        self.design = MKLAB_THEME
 
     def compose(self) -> ComposeResult:
         yield Header()

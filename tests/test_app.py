@@ -17,9 +17,7 @@ def mock_auth_authenticated():
     """Mock auth service to be authenticated."""
     with patch("anvil.app.AuthService") as mock_cls:
         mock_service = mock_cls.return_value
-        mock_service.check_auth_status.return_value = AuthResult(
-            status=AuthStatus.AUTHENTICATED
-        )
+        mock_service.check_auth_status.return_value = AuthResult(status=AuthStatus.AUTHENTICATED)
         mock_service.is_authenticated.return_value = True
         yield mock_service
 
@@ -93,9 +91,7 @@ async def test_app_shows_selection_without_cache(
             assert isinstance(app.screen, SubscriptionSelectScreen)
 
 
-async def test_quit_binding_on_home(
-    mock_auth_authenticated, mock_config_with_selection
-) -> None:
+async def test_quit_binding_on_home(mock_auth_authenticated, mock_config_with_selection) -> None:
     """Test that pressing 'q' quits the application from home screen."""
     app = AnvilApp()
     async with app.run_test() as pilot:

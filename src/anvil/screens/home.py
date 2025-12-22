@@ -87,7 +87,6 @@ class HomeScreen(Screen[None]):
                         )
                     else:
                         yield Static(
-                            "No project selected.\n\n"
-                            "Press 'p' to select a Foundry project.",
+                            "No project selected.\n\nPress 'p' to select a Foundry project.",
                             id="getting-started-text",
                         )

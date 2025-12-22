@@ -133,8 +133,7 @@ class SubscriptionSelectScreen(Screen[Subscription | None]):
         # Update UI
         self.query_one("#loading", LoadingIndicator).display = False
         self.query_one("#status", Static).update(
-            f"Found {len(self._subscriptions)} subscription(s). "
-            "Select one or type to filter."
+            f"Found {len(self._subscriptions)} subscription(s). Select one or type to filter."
         )
 
         search_list = self.query_one("#subscription-list", SearchableList)

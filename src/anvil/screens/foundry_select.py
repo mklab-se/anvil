@@ -133,8 +133,7 @@ class FoundrySelectScreen(Screen[FoundryAccount | None]):
         # Update UI
         self.query_one("#loading", LoadingIndicator).display = False
         self.query_one("#status", Static).update(
-            f"Found {len(self._accounts)} Foundry instance(s). "
-            "Select one or type to filter."
+            f"Found {len(self._accounts)} Foundry instance(s). Select one or type to filter."
         )
 
         search_list = self.query_one("#account-list", SearchableList)

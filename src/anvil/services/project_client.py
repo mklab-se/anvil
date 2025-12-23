@@ -5,6 +5,12 @@ from datetime import datetime
 from typing import Any
 
 from azure.ai.projects import AIProjectClient
+from azure.ai.projects.models import (
+    CodeInterpreterTool,
+    FileSearchTool,
+    MCPTool,
+    PromptAgentDefinition,
+)
 from azure.core.credentials import TokenCredential
 from azure.core.exceptions import ClientAuthenticationError, HttpResponseError
 
@@ -54,6 +60,11 @@ class Agent:
     requires_approval: bool = False  # Whether ANY tool requires approval
     tool_configs: list[ToolConfig] | None = None  # Full tool configurations
     full_metadata: dict[str, str] | None = None  # All custom metadata
+
+    # Publishing info (populated separately via ARM API)
+    is_published: bool = False
+    published_url: str | None = None
+    published_protocols: list[str] | None = None
 
 
 @dataclass
@@ -425,3 +436,172 @@ class ProjectClientService:
             raise NotAuthenticated(str(e)) from e
         except HttpResponseError as e:
             raise NetworkError(f"Failed to delete agent: {e}") from e
+
+    def get_chat_completion_models(self) -> list[Deployment]:
+        """Get deployments suitable for agents (chat completion capable).
+
+        Filters out embedding models and other non-chat models.
+
+        Returns:
+            List of deployments that support chat completion.
+        """
+        all_deployments = self.list_deployments()
+        return [d for d in all_deployments if "Chat Completion" in d.capabilities]
+
+    def _build_tools_from_configs(
+        self, tool_configs: list[ToolConfig]
+    ) -> list[CodeInterpreterTool | FileSearchTool | MCPTool]:
+        """Build SDK tool objects from ToolConfig list."""
+        tools: list[CodeInterpreterTool | FileSearchTool | MCPTool] = []
+        for config in tool_configs:
+            if config.type == "code_interpreter":
+                # CodeInterpreterTool requires container parameter
+                tools.append(CodeInterpreterTool(container="auto"))
+            elif config.type == "file_search":
+                # FileSearchTool requires vector_store_ids
+                vs_ids = config.vector_store_ids or []
+                if vs_ids:
+                    tools.append(FileSearchTool(vector_store_ids=vs_ids))
+            elif config.type == "mcp":
+                # MCPTool requires keyword arguments
+                # require_approval must be "always" or "never"
+                require_approval_raw = config.require_approval or "always"
+                require_approval_val: str = (
+                    "never" if require_approval_raw == "never" else "always"
+                )
+                mcp_tool = MCPTool(  # type: ignore[call-overload]
+                    server_label=config.server_label or "",
+                    server_url=config.server_url or "",
+                    require_approval=require_approval_val,
+                    project_connection_id=config.project_connection_id,
+                )
+                tools.append(mcp_tool)
+        return tools
+
+    def create_agent(
+        self,
+        name: str,
+        model: str,
+        instructions: str,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        tool_configs: list[ToolConfig] | None = None,
+        description: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> Agent:
+        """Create a new agent.
+
+        Args:
+            name: Agent name (required).
+            model: Model deployment name (required).
+            instructions: System instructions (required).
+            temperature: Sampling temperature (0-2).
+            top_p: Nucleus sampling parameter (0-1).
+            tool_configs: List of tool configurations.
+            description: Optional agent description.
+            metadata: Optional custom metadata.
+
+        Returns:
+            The created Agent.
+
+        Raises:
+            NotAuthenticated: If credential is invalid.
+            NetworkError: If network request fails.
+        """
+        try:
+            # Build tools from configs
+            tools = self._build_tools_from_configs(tool_configs or [])
+
+            # Build definition (PromptAgentDefinition uses keyword args only)
+            definition = PromptAgentDefinition(
+                model=model,
+                instructions=instructions,
+                temperature=temperature,
+                top_p=top_p,
+                tools=tools if tools else None,  # type: ignore[arg-type]
+            )
+
+            # Create the agent
+            self.client.agents.create(
+                name=name,
+                definition=definition,
+                description=description,
+                metadata=metadata,
+            )
+
+            # Refresh and return the created agent
+            agents = self.list_agents()
+            for agent in agents:
+                if agent.name == name:
+                    return agent
+
+            # Fallback if not found (shouldn't happen)
+            raise NetworkError(f"Agent '{name}' created but not found in list")
+        except ClientAuthenticationError as e:
+            raise NotAuthenticated(str(e)) from e
+        except HttpResponseError as e:
+            raise NetworkError(f"Failed to create agent: {e}") from e
+
+    def update_agent(
+        self,
+        agent_name: str,
+        model: str,
+        instructions: str,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        tool_configs: list[ToolConfig] | None = None,
+        description: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> Agent:
+        """Update an existing agent.
+
+        Args:
+            agent_name: Agent name to update.
+            model: Model deployment name.
+            instructions: System instructions.
+            temperature: Sampling temperature (0-2).
+            top_p: Nucleus sampling parameter (0-1).
+            tool_configs: List of tool configurations.
+            description: Optional agent description.
+            metadata: Optional custom metadata.
+
+        Returns:
+            The updated Agent.
+
+        Raises:
+            NotAuthenticated: If credential is invalid.
+            NetworkError: If network request fails.
+        """
+        try:
+            # Build tools from configs
+            tools = self._build_tools_from_configs(tool_configs or [])
+
+            # Build definition (PromptAgentDefinition uses keyword args only)
+            definition = PromptAgentDefinition(
+                model=model,
+                instructions=instructions,
+                temperature=temperature,
+                top_p=top_p,
+                tools=tools if tools else None,  # type: ignore[arg-type]
+            )
+
+            # Update the agent
+            self.client.agents.update(
+                agent_name=agent_name,
+                definition=definition,
+                description=description,
+                metadata=metadata,
+            )
+
+            # Refresh and return the updated agent
+            agents = self.list_agents()
+            for agent in agents:
+                if agent.name == agent_name:
+                    return agent
+
+            # Fallback if not found (shouldn't happen)
+            raise NetworkError(f"Agent '{agent_name}' updated but not found in list")
+        except ClientAuthenticationError as e:
+            raise NotAuthenticated(str(e)) from e
+        except HttpResponseError as e:
+            raise NetworkError(f"Failed to update agent: {e}") from e

@@ -675,3 +675,235 @@ class TestParseCreatedAt:
         """Test that None input returns None."""
         result = service._parse_created_at(None)
         assert result is None
+
+
+class TestGetChatCompletionModels:
+    """Tests for the get_chat_completion_models method."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock AIProjectClient."""
+        with patch("anvil.services.project_client.AIProjectClient") as mock:
+            yield mock
+
+    @pytest.fixture
+    def service(self, mock_client):
+        """Create a ProjectClientService with mocked client."""
+        mock_credential = MagicMock()
+        return ProjectClientService(
+            endpoint="https://test.endpoint",
+            credential=mock_credential,
+        )
+
+    def _create_mock_deployment(
+        self,
+        name: str,
+        model_name: str,
+        capabilities: dict | None = None,
+    ) -> MagicMock:
+        """Create a mock deployment."""
+        mock_dep = MagicMock()
+        mock_dep.name = name
+        mock_dep.model_name = model_name
+        mock_dep.model_version = "1"
+        mock_dep.model_publisher = "OpenAI"
+        mock_dep.sku = {"name": "GlobalStandard", "capacity": 100}
+        mock_dep.capabilities = capabilities or {}
+        return mock_dep
+
+    def test_filters_to_chat_completion_only(self, service, mock_client):
+        """Test that only chat completion capable models are returned."""
+        mock_deps = [
+            self._create_mock_deployment(
+                "gpt-4o", "gpt-4o", {"chat_completion": "true"}
+            ),
+            self._create_mock_deployment(
+                "text-embedding-3-small",
+                "text-embedding-3-small",
+                {"embeddings": "true"},
+            ),
+            self._create_mock_deployment(
+                "gpt-4o-mini", "gpt-4o-mini", {"chat_completion": "true"}
+            ),
+        ]
+
+        mock_client.return_value.deployments.list.return_value = mock_deps
+
+        models = service.get_chat_completion_models()
+
+        assert len(models) == 2
+        assert models[0].name == "gpt-4o"
+        assert models[1].name == "gpt-4o-mini"
+
+    def test_excludes_embedding_models(self, service, mock_client):
+        """Test that embedding-only models are excluded."""
+        mock_deps = [
+            self._create_mock_deployment(
+                "text-embedding-3-small",
+                "text-embedding-3-small",
+                {"embeddings": "true"},
+            ),
+            self._create_mock_deployment(
+                "text-embedding-3-large",
+                "text-embedding-3-large",
+                {"embeddings": "true"},
+            ),
+        ]
+
+        mock_client.return_value.deployments.list.return_value = mock_deps
+
+        models = service.get_chat_completion_models()
+
+        assert len(models) == 0
+
+    def test_returns_empty_list_when_no_models(self, service, mock_client):
+        """Test handling of empty deployment list."""
+        mock_client.return_value.deployments.list.return_value = []
+
+        models = service.get_chat_completion_models()
+
+        assert models == []
+
+
+class TestAgentPublishingFields:
+    """Tests for Agent dataclass publishing fields."""
+
+    def test_agent_has_publishing_fields_with_defaults(self):
+        """Test that Agent has publishing fields with correct defaults."""
+        agent = Agent(
+            id="test",
+            name="test",
+            version="1",
+            agent_type="Prompt",
+            created_at=None,
+            description=None,
+            model="gpt-4o",
+            instructions="test",
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+        )
+
+        # Default values for publishing fields
+        assert agent.is_published is False
+        assert agent.published_url is None
+        assert agent.published_protocols is None
+
+    def test_agent_can_set_publishing_fields(self):
+        """Test that Agent publishing fields can be set."""
+        agent = Agent(
+            id="test",
+            name="test",
+            version="1",
+            agent_type="Prompt",
+            created_at=None,
+            description=None,
+            model="gpt-4o",
+            instructions="test",
+            tools=[],
+            knowledge=[],
+            memory_enabled=False,
+            guardrails=[],
+            is_published=True,
+            published_url="https://test.url/api",
+            published_protocols=["Responses"],
+        )
+
+        assert agent.is_published is True
+        assert agent.published_url == "https://test.url/api"
+        assert agent.published_protocols == ["Responses"]
+
+
+class TestBuildToolsFromConfigs:
+    """Tests for the _build_tools_from_configs helper."""
+
+    @pytest.fixture
+    def service(self):
+        """Create a ProjectClientService for testing."""
+        mock_credential = MagicMock()
+        with patch("anvil.services.project_client.AIProjectClient"):
+            return ProjectClientService(
+                endpoint="https://test.endpoint",
+                credential=mock_credential,
+            )
+
+    def test_builds_code_interpreter_tool(self, service):
+        """Test building CodeInterpreterTool from config."""
+        from anvil.services.project_client import ToolConfig
+
+        configs = [ToolConfig(type="code_interpreter", display_name="Code Interpreter")]
+
+        tools = service._build_tools_from_configs(configs)
+
+        assert len(tools) == 1
+        assert tools[0].__class__.__name__ == "CodeInterpreterTool"
+
+    def test_builds_mcp_tool_with_approval_always(self, service):
+        """Test building MCPTool with require_approval=always."""
+        from anvil.services.project_client import ToolConfig
+
+        configs = [
+            ToolConfig(
+                type="mcp",
+                display_name="MCP",
+                server_label="kb_test",
+                server_url="https://test.url",
+                require_approval="always",
+                project_connection_id="test-conn",
+            )
+        ]
+
+        tools = service._build_tools_from_configs(configs)
+
+        assert len(tools) == 1
+        assert tools[0].__class__.__name__ == "MCPTool"
+
+    def test_builds_mcp_tool_with_approval_never(self, service):
+        """Test building MCPTool with require_approval=never."""
+        from anvil.services.project_client import ToolConfig
+
+        configs = [
+            ToolConfig(
+                type="mcp",
+                display_name="MCP",
+                server_label="kb_test",
+                server_url="https://test.url",
+                require_approval="never",
+            )
+        ]
+
+        tools = service._build_tools_from_configs(configs)
+
+        assert len(tools) == 1
+
+    def test_skips_file_search_without_vector_stores(self, service):
+        """Test that FileSearchTool without vector stores is skipped."""
+        from anvil.services.project_client import ToolConfig
+
+        configs = [
+            ToolConfig(type="file_search", display_name="File Search", vector_store_ids=[])
+        ]
+
+        tools = service._build_tools_from_configs(configs)
+
+        assert len(tools) == 0
+
+    def test_builds_multiple_tools(self, service):
+        """Test building multiple tools from configs."""
+        from anvil.services.project_client import ToolConfig
+
+        configs = [
+            ToolConfig(type="code_interpreter", display_name="Code Interpreter"),
+            ToolConfig(
+                type="mcp",
+                display_name="MCP",
+                server_label="kb_test",
+                server_url="https://test.url",
+                require_approval="always",
+            ),
+        ]
+
+        tools = service._build_tools_from_configs(configs)
+
+        assert len(tools) == 2

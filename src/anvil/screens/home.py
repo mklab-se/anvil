@@ -1,14 +1,18 @@
 """Home screen for Anvil TUI."""
 
+import contextlib
+
 from azure.core.credentials import TokenCredential
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Input, Static
+from textual.widgets import Button, DataTable, Footer, Header, Input, Static
 from textual.worker import Worker, WorkerState, get_current_worker
 
 from anvil.config import FoundrySelection
+from anvil.screens.agent_edit import AgentEditScreen
+from anvil.services.arm_client import ArmClientService, PublishedAgent
 from anvil.services.project_client import Agent, Deployment, ProjectClientService
 from anvil.widgets.sidebar import Sidebar
 
@@ -21,7 +25,10 @@ class HomeScreen(Screen[None]):
         Binding("shift+tab", "focus_previous", "Prev pane", show=False),
         Binding("/", "focus_search", "Search"),
         Binding("r", "refresh", "Refresh"),
-        Binding("n", "new", "New"),
+        Binding("n", "new_agent", "New"),
+        Binding("e", "edit_agent", "Edit"),
+        Binding("enter", "edit_agent", "Edit", show=False),
+        Binding("u", "unpublish_agent", "Unpublish", show=False),
     ]
 
     CSS = """
@@ -143,20 +150,28 @@ class HomeScreen(Screen[None]):
         self,
         current_selection: FoundrySelection | None = None,
         credential: TokenCredential | None = None,
+        subscription_id: str | None = None,
+        resource_group: str | None = None,
     ) -> None:
         """Initialize the home screen.
 
         Args:
             current_selection: Current Foundry project selection.
             credential: Azure credential for API calls.
+            subscription_id: Azure subscription ID for ARM API.
+            resource_group: Resource group name for ARM API.
         """
         super().__init__()
         self._selection = current_selection
         self._credential = credential
+        self._subscription_id = subscription_id
+        self._resource_group = resource_group
         self._current_resource = "agents"
         self._project_client: ProjectClientService | None = None
+        self._arm_client: ArmClientService | None = None
         self._agents: list[Agent] = []
         self._deployments: list[Deployment] = []
+        self._published_agents: dict[str, PublishedAgent] = {}
 
         # Initialize project client if we have selection and credential
         if self._selection and self._credential and self._selection.project_endpoint:
@@ -164,6 +179,16 @@ class HomeScreen(Screen[None]):
                 endpoint=self._selection.project_endpoint,
                 credential=self._credential,
             )
+
+            # Initialize ARM client if we have all required info
+            if subscription_id and resource_group:
+                with contextlib.suppress(ValueError):
+                    self._arm_client = ArmClientService.from_project_endpoint(
+                        project_endpoint=self._selection.project_endpoint,
+                        subscription_id=subscription_id,
+                        resource_group=resource_group,
+                        credential=self._credential,
+                    )
 
     def compose(self) -> ComposeResult:
         """Create the home screen layout."""
@@ -193,6 +218,9 @@ class HomeScreen(Screen[None]):
     def _load_agents(self) -> None:
         """Load agents from the SDK using a background worker."""
         self.run_worker(self._fetch_agents, thread=True, name="fetch_agents")
+        # Also fetch published agents if ARM client is available
+        if self._arm_client:
+            self.run_worker(self._fetch_published_agents, thread=True, name="fetch_published")
 
     def _fetch_agents(self) -> list[Agent]:
         """Fetch agents in background thread."""
@@ -203,11 +231,38 @@ class HomeScreen(Screen[None]):
             return self._project_client.list_agents()
         return []
 
+    def _fetch_published_agents(self) -> list[PublishedAgent]:
+        """Fetch published agents via ARM API in background thread."""
+        worker = get_current_worker()
+        if worker.is_cancelled:
+            return []
+        if self._arm_client:
+            try:
+                return self._arm_client.list_published_agents()
+            except Exception:
+                return []
+        return []
+
+    def _merge_published_status(self) -> None:
+        """Merge published status into agent objects."""
+        for agent in self._agents:
+            if agent.name in self._published_agents:
+                pub = self._published_agents[agent.name]
+                agent.is_published = True
+                agent.published_url = pub.base_url
+                agent.published_protocols = pub.protocols
+            else:
+                agent.is_published = False
+                agent.published_url = None
+                agent.published_protocols = None
+
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         """Handle worker completion."""
         if event.worker.name == "fetch_agents":
             if event.state == WorkerState.SUCCESS:
                 self._agents = event.worker.result or []
+                # Merge published status if available
+                self._merge_published_status()
                 # Only populate if we're still on agents view
                 if self._current_resource == "agents":
                     self._populate_agents_table()
@@ -215,6 +270,23 @@ class HomeScreen(Screen[None]):
                 self.notify(f"Failed to load agents: {event.worker.error}", severity="error")
                 if self._current_resource == "agents":
                     self._load_placeholder_data()
+        elif event.worker.name == "fetch_published":
+            if event.state == WorkerState.SUCCESS:
+                published_list = event.worker.result or []
+                self._published_agents = {p.agent_name: p for p in published_list}
+                # Merge into existing agents and refresh display
+                self._merge_published_status()
+                if self._current_resource == "agents":
+                    self._populate_agents_table()
+        elif event.worker.name == "unpublish_agent":
+            if event.state == WorkerState.SUCCESS:
+                agent_name = event.worker.result
+                self.notify(f"Agent '{agent_name}' unpublished", severity="information")
+                # Refresh the agents list
+                if self._project_client:
+                    self._load_agents()
+            elif event.state == WorkerState.ERROR:
+                self.notify(f"Failed to unpublish: {event.worker.error}", severity="error")
         elif event.worker.name == "fetch_deployments":
             if event.state == WorkerState.SUCCESS:
                 self._deployments = event.worker.result or []
@@ -410,7 +482,7 @@ class HomeScreen(Screen[None]):
     def _cancel_pending_workers(self) -> None:
         """Cancel any running data fetch workers."""
         for worker in self.workers:
-            if worker.name in ("fetch_agents", "fetch_deployments"):
+            if worker.name in ("fetch_agents", "fetch_deployments", "fetch_published"):
                 worker.cancel()
 
     def on_sidebar_selected(self, event: Sidebar.Selected) -> None:
@@ -566,6 +638,23 @@ class HomeScreen(Screen[None]):
                 display_value = value[:30] + "..." if len(value) > 30 else value
                 lines.append(f"  {key}: {display_value}")
 
+        # ── Publishing ──
+        lines.append("\n[b]── Publishing ──[/b]")
+        if agent.is_published:
+            lines.append("[green]Status: Published[/green]")
+            if agent.published_url:
+                # Truncate URL for display
+                url = agent.published_url
+                if len(url) > 40:
+                    url = url[:37] + "..."
+                lines.append(f"URL: {url}")
+            if agent.published_protocols:
+                protocols = ", ".join(agent.published_protocols)
+                lines.append(f"Protocols: {protocols}")
+            lines.append("\n[dim]Press 'u' to unpublish[/dim]")
+        else:
+            lines.append("[dim]Status: Not Published[/dim]")
+
         # ── IDs ──
         lines.append("\n[b]── IDs ──[/b]")
         lines.append(f"Agent: {agent.id}")
@@ -682,12 +771,127 @@ class HomeScreen(Screen[None]):
 
     def action_refresh(self) -> None:
         """Refresh the current resource list."""
-        self._load_placeholder_data()
+        if self._current_resource == "agents" and self._project_client:
+            self._load_agents()
+        elif self._current_resource == "models" and self._project_client:
+            self._load_models()
+        else:
+            self._load_placeholder_data()
         self.notify("Refreshed")
 
-    def action_new(self) -> None:
-        """Create a new resource."""
-        self.notify(f"Create new {self._current_resource[:-1]}")  # Remove 's'
+    def _get_selected_agent(self) -> Agent | None:
+        """Get the currently selected agent."""
+        if self._current_resource != "agents":
+            return None
+
+        table = self.query_one("#resource-table", DataTable)
+        if table.cursor_row is None:
+            return None
+
+        # Get the row key for the current cursor position
+        try:
+            row_key = table.get_row_at(table.cursor_row)
+            if row_key:
+                # The key is the agent ID
+                cursor_row_key = table._row_locations.get_key(table.cursor_row)
+                if cursor_row_key:
+                    return self._get_agent_by_id(str(cursor_row_key.value))
+        except Exception:
+            pass
+        return None
+
+    def _on_edit_screen_dismiss(self, result: Agent | None) -> None:
+        """Handle edit screen dismissal."""
+        if result:
+            # Agent was saved, refresh the list
+            if self._project_client:
+                self._load_agents()
+            self.notify(f"Agent '{result.name}' saved")
+
+    def action_new_agent(self) -> None:
+        """Create a new agent."""
+        if self._current_resource != "agents":
+            self.notify("Can only create agents in Agents view", severity="warning")
+            return
+
+        self.app.push_screen(
+            AgentEditScreen(agent=None, project_client=self._project_client),
+            callback=self._on_edit_screen_dismiss,
+        )
+
+    def action_edit_agent(self) -> None:
+        """Edit the selected agent."""
+        if self._current_resource != "agents":
+            self.notify("Can only edit agents in Agents view", severity="warning")
+            return
+
+        agent = self._get_selected_agent()
+        if not agent:
+            self.notify("No agent selected", severity="warning")
+            return
+
+        self.app.push_screen(
+            AgentEditScreen(agent=agent, project_client=self._project_client),
+            callback=self._on_edit_screen_dismiss,
+        )
+
+    def action_unpublish_agent(self) -> None:
+        """Unpublish the selected agent."""
+        if self._current_resource != "agents":
+            self.notify("Can only unpublish agents in Agents view", severity="warning")
+            return
+
+        agent = self._get_selected_agent()
+        if not agent:
+            self.notify("No agent selected", severity="warning")
+            return
+
+        if not agent.is_published:
+            self.notify("Agent is not published", severity="warning")
+            return
+
+        if not self._arm_client:
+            self.notify("ARM client not available", severity="error")
+            return
+
+        # Get published agent info
+        pub_agent = self._published_agents.get(agent.name)
+        if not pub_agent:
+            self.notify("Published agent info not found", severity="error")
+            return
+
+        # Confirm before unpublishing
+        self.app.push_screen(
+            ConfirmUnpublishScreen(agent_name=agent.name),
+            callback=lambda confirmed: self._handle_unpublish_confirmation(
+                confirmed, pub_agent
+            ),
+        )
+
+    def _handle_unpublish_confirmation(
+        self, confirmed: bool, pub_agent: PublishedAgent
+    ) -> None:
+        """Handle unpublish confirmation result."""
+        if not confirmed:
+            return
+
+        if not self._arm_client:
+            return
+
+        # Run unpublish in background
+        self.run_worker(
+            lambda: self._do_unpublish(pub_agent),
+            thread=True,
+            name="unpublish_agent",
+        )
+
+    def _do_unpublish(self, pub_agent: PublishedAgent) -> str:
+        """Perform the unpublish operation in background thread."""
+        if self._arm_client:
+            self._arm_client.unpublish_agent(
+                pub_agent.application_name, pub_agent.deployment_name
+            )
+        return pub_agent.agent_name
 
     def action_focus_next(self) -> None:
         """Focus the next pane."""
@@ -709,3 +913,86 @@ class HomeScreen(Screen[None]):
             self.query_one("#resource-table", DataTable).focus()
         else:
             self.query_one("#sidebar", Sidebar).focus()
+
+
+class ConfirmUnpublishScreen(Screen[bool]):
+    """Confirmation modal for unpublishing an agent."""
+
+    CSS = """
+    ConfirmUnpublishScreen {
+        align: center middle;
+    }
+
+    #confirm-dialog {
+        width: 50;
+        height: auto;
+        padding: 1 2;
+        background: $surface;
+        border: solid $primary;
+    }
+
+    #confirm-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #confirm-message {
+        margin-bottom: 1;
+    }
+
+    #confirm-buttons {
+        width: 100%;
+        height: 3;
+        align: center middle;
+    }
+
+    #confirm-buttons Button {
+        margin: 0 1;
+    }
+
+    .danger-btn {
+        background: $error;
+    }
+    """
+
+    BINDINGS = [  # noqa: RUF012
+        Binding("escape", "cancel", "Cancel"),
+        Binding("enter", "confirm", "Confirm", show=False),
+    ]
+
+    def __init__(self, agent_name: str) -> None:
+        """Initialize the confirmation screen.
+
+        Args:
+            agent_name: Name of the agent to unpublish.
+        """
+        super().__init__()
+        self._agent_name = agent_name
+
+    def compose(self) -> ComposeResult:
+        """Create the confirmation dialog."""
+        with Container(id="confirm-dialog"):
+            yield Static("Unpublish Agent", id="confirm-title")
+            yield Static(
+                f"Are you sure you want to unpublish '{self._agent_name}'?\n\n"
+                "This will remove the agent's API endpoints.",
+                id="confirm-message",
+            )
+            with Horizontal(id="confirm-buttons"):
+                yield Button("Cancel", id="cancel-btn")
+                yield Button("Unpublish", id="confirm-btn", classes="danger-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "confirm-btn":
+            self.dismiss(True)
+        else:
+            self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        """Cancel the operation."""
+        self.dismiss(False)
+
+    def action_confirm(self) -> None:
+        """Confirm the operation."""
+        self.dismiss(True)

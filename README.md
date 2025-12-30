@@ -85,6 +85,27 @@ uv run ruff format src tests
 uv run mypy src
 ```
 
+## Corporate Networks / SSL Configuration
+
+If you're on a corporate network that uses a custom CA bundle, Anvil supports the following environment variables:
+
+```bash
+# Use a custom CA bundle
+export SSL_CERT_FILE=/path/to/corporate-ca-bundle.crt
+# or
+export REQUESTS_CA_BUNDLE=/path/to/corporate-ca-bundle.crt
+
+# On macOS, you can export system certificates:
+security export -t certs -f pemseq -k /Library/Keychains/System.keychain -o ~/corp-ca.pem
+export SSL_CERT_FILE=~/corp-ca.pem
+```
+
+If you need to temporarily disable SSL verification (not recommended for production):
+
+```bash
+export ANVIL_SSL_VERIFY=false
+```
+
 ## Project Structure
 
 ```

@@ -300,7 +300,9 @@ class AgentEditScreen(Screen[Agent | None]):
                     has_code_interpreter = self._has_tool("code_interpreter")
                     has_file_search = self._has_tool("file_search")
 
-                    yield Checkbox("Code Interpreter", has_code_interpreter, id="tool-code-interpreter")
+                    yield Checkbox(
+                        "Code Interpreter", has_code_interpreter, id="tool-code-interpreter"
+                    )
                     yield Checkbox("File Search", has_file_search, id="tool-file-search")
 
                     # MCP tools (if any exist)
@@ -323,8 +325,12 @@ class AgentEditScreen(Screen[Agent | None]):
                                 yield Label(f"Approval for {label}:")
                                 with RadioSet(id=f"approval-radio-{i}"):
                                     is_always = mcp_tool.require_approval == "always"
-                                    yield RadioButton("Always", value=is_always, id=f"approval-always-{i}")
-                                    yield RadioButton("Never", value=not is_always, id=f"approval-never-{i}")
+                                    yield RadioButton(
+                                        "Always", value=is_always, id=f"approval-always-{i}"
+                                    )
+                                    yield RadioButton(
+                                        "Never", value=not is_always, id=f"approval-never-{i}"
+                                    )
 
             # Button bar at bottom
             with Horizontal(id="button-bar"):
@@ -460,7 +466,9 @@ class AgentEditScreen(Screen[Agent | None]):
         # Check standard tools
         code_interpreter_cb = self.query_one("#tool-code-interpreter", Checkbox)
         if code_interpreter_cb.value:
-            tool_configs.append(ToolConfig(type="code_interpreter", display_name="Code Interpreter"))
+            tool_configs.append(
+                ToolConfig(type="code_interpreter", display_name="Code Interpreter")
+            )
 
         file_search_cb = self.query_one("#tool-file-search", Checkbox)
         if file_search_cb.value:

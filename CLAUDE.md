@@ -48,7 +48,13 @@ uv run mypy src
 
 ## Development Workflow
 
-Before starting any implementation, run `uv run pytest && uv run ruff check src tests && uv run mypy src` to ensure the codebase is in a working state. After completing changes, run the same commands to verify nothing broke. This keeps the system stable and gives you a solid foundation.
+Before starting any implementation, run `uv run pytest && uv run ruff check src tests && uv run mypy src` to ensure the codebase is in a working state. After completing changes, run the full CI check to verify nothing broke:
+
+```bash
+uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy src && uv run pytest
+```
+
+If formatting fails, run `uv run ruff format src tests` to fix it. This keeps the system stable and matches what CI will check.
 
 ### Dependencies Philosophy
 
@@ -127,7 +133,7 @@ def _create_mock_agent(self, agent_id: str, name: str, model: str) -> MagicMock:
 
 ## CI/CD
 
-- **CI** (`.github/workflows/ci.yml`): Runs on push/PR to main - lint, type check, test on Python 3.11-3.13
+- **CI** (`.github/workflows/ci.yml`): Runs on push/PR to main - lint, format check, type check, test on Python 3.12-3.14
 - **Publish** (`.github/workflows/publish.yml`): Publishes to PyPI on GitHub release using trusted publishing
 
 ## Releasing

@@ -700,7 +700,9 @@ class HomeScreen(Screen[None]):
             title.update(str(name))
 
             # Try to get full deployment details
-            deployment = self._get_deployment_by_name(str(event.row_key.value)) if event.row_key else None
+            deployment = (
+                self._get_deployment_by_name(str(event.row_key.value)) if event.row_key else None
+            )
             if deployment:
                 content.update(self._format_deployment_preview(deployment))
             else:
@@ -752,7 +754,11 @@ class HomeScreen(Screen[None]):
                 title.update(str(name))
 
                 # Try to get full deployment details
-                deployment = self._get_deployment_by_name(str(event.row_key.value)) if event.row_key else None
+                deployment = (
+                    self._get_deployment_by_name(str(event.row_key.value))
+                    if event.row_key
+                    else None
+                )
                 if deployment:
                     content.update(self._format_deployment_preview(deployment))
                 else:
@@ -863,14 +869,10 @@ class HomeScreen(Screen[None]):
         # Confirm before unpublishing
         self.app.push_screen(
             ConfirmUnpublishScreen(agent_name=agent.name),
-            callback=lambda confirmed: self._handle_unpublish_confirmation(
-                confirmed, pub_agent
-            ),
+            callback=lambda confirmed: self._handle_unpublish_confirmation(confirmed, pub_agent),
         )
 
-    def _handle_unpublish_confirmation(
-        self, confirmed: bool, pub_agent: PublishedAgent
-    ) -> None:
+    def _handle_unpublish_confirmation(self, confirmed: bool, pub_agent: PublishedAgent) -> None:
         """Handle unpublish confirmation result."""
         if not confirmed:
             return
@@ -888,9 +890,7 @@ class HomeScreen(Screen[None]):
     def _do_unpublish(self, pub_agent: PublishedAgent) -> str:
         """Perform the unpublish operation in background thread."""
         if self._arm_client:
-            self._arm_client.unpublish_agent(
-                pub_agent.application_name, pub_agent.deployment_name
-            )
+            self._arm_client.unpublish_agent(pub_agent.application_name, pub_agent.deployment_name)
         return pub_agent.agent_name
 
     def action_focus_next(self) -> None:

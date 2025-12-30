@@ -714,17 +714,13 @@ class TestGetChatCompletionModels:
     def test_filters_to_chat_completion_only(self, service, mock_client):
         """Test that only chat completion capable models are returned."""
         mock_deps = [
-            self._create_mock_deployment(
-                "gpt-4o", "gpt-4o", {"chat_completion": "true"}
-            ),
+            self._create_mock_deployment("gpt-4o", "gpt-4o", {"chat_completion": "true"}),
             self._create_mock_deployment(
                 "text-embedding-3-small",
                 "text-embedding-3-small",
                 {"embeddings": "true"},
             ),
-            self._create_mock_deployment(
-                "gpt-4o-mini", "gpt-4o-mini", {"chat_completion": "true"}
-            ),
+            self._create_mock_deployment("gpt-4o-mini", "gpt-4o-mini", {"chat_completion": "true"}),
         ]
 
         mock_client.return_value.deployments.list.return_value = mock_deps
@@ -881,9 +877,7 @@ class TestBuildToolsFromConfigs:
         """Test that FileSearchTool without vector stores is skipped."""
         from anvil.services.project_client import ToolConfig
 
-        configs = [
-            ToolConfig(type="file_search", display_name="File Search", vector_store_ids=[])
-        ]
+        configs = [ToolConfig(type="file_search", display_name="File Search", vector_store_ids=[])]
 
         tools = service._build_tools_from_configs(configs)
 

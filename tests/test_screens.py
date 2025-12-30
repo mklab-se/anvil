@@ -323,7 +323,9 @@ class TestViewSwitchingRaceCondition:
         home_screen.on_worker_state_changed(mock_event)
 
         # Deployment data should be stored but table should NOT be populated
-        assert home_screen._deployments == sample_deployments, "Deployment data should still be stored"
+        assert home_screen._deployments == sample_deployments, (
+            "Deployment data should still be stored"
+        )
         assert not populate_called, "Table should NOT be populated when on agents view"
 
     def test_agents_populated_when_still_on_agents_view(self, home_screen, sample_agents):

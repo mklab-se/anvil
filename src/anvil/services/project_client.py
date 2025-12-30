@@ -309,7 +309,9 @@ class ProjectClientService:
                         metadata = latest_version.get("metadata", {}) or {}
                     else:
                         metadata = getattr(latest_version, "metadata", {}) or {}
-                memory_enabled = bool(metadata.get("memory_enabled", False) if isinstance(metadata, dict) else False)
+                memory_enabled = bool(
+                    metadata.get("memory_enabled", False) if isinstance(metadata, dict) else False
+                )
 
                 guardrails: list[str] = []
                 if isinstance(metadata, dict):
@@ -385,8 +387,7 @@ class ProjectClientService:
                 if sku_name:
                     # Insert space before capital letters
                     deployment_type = "".join(
-                        " " + c if c.isupper() and i > 0 else c
-                        for i, c in enumerate(sku_name)
+                        " " + c if c.isupper() and i > 0 else c for i, c in enumerate(sku_name)
                     ).strip()
 
                 # Extract capabilities
@@ -466,9 +467,7 @@ class ProjectClientService:
                 # MCPTool requires keyword arguments
                 # require_approval must be "always" or "never"
                 require_approval_raw = config.require_approval or "always"
-                require_approval_val: str = (
-                    "never" if require_approval_raw == "never" else "always"
-                )
+                require_approval_val: str = "never" if require_approval_raw == "never" else "always"
                 mcp_tool = MCPTool(  # type: ignore[call-overload]
                     server_label=config.server_label or "",
                     server_url=config.server_url or "",

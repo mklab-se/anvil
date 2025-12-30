@@ -15,6 +15,7 @@ from azure.core.credentials import TokenCredential
 from azure.core.exceptions import ClientAuthenticationError, HttpResponseError
 
 from anvil.services.exceptions import NetworkError, NotAuthenticated
+from anvil.services.ssl_config import format_ssl_error_message
 
 
 @dataclass
@@ -352,6 +353,10 @@ class ProjectClientService:
             raise NotAuthenticated(str(e)) from e
         except HttpResponseError as e:
             raise NetworkError(f"Failed to list agents: {e}") from e
+        except Exception as e:
+            # Format SSL errors with helpful guidance
+            error_msg = format_ssl_error_message(e)
+            raise NetworkError(error_msg) from e
 
     def list_deployments(self) -> list[Deployment]:
         """List model deployments in the project.
@@ -417,7 +422,13 @@ class ProjectClientService:
             raise NotAuthenticated(str(e)) from e
         except HttpResponseError as e:
             raise NetworkError(f"Failed to list deployments: {e}") from e
-        except Exception:
+        except Exception as e:
+            # Check if it's an SSL error - provide helpful guidance
+            error_str = str(e).lower()
+            ssl_keywords = ["ssl", "certificate", "verify", "handshake"]
+            if any(keyword in error_str for keyword in ssl_keywords):
+                error_msg = format_ssl_error_message(e)
+                raise NetworkError(error_msg) from e
             # Return empty list if deployments API is not available
             return []
 
@@ -437,6 +448,10 @@ class ProjectClientService:
             raise NotAuthenticated(str(e)) from e
         except HttpResponseError as e:
             raise NetworkError(f"Failed to delete agent: {e}") from e
+        except Exception as e:
+            # Format SSL errors with helpful guidance
+            error_msg = format_ssl_error_message(e)
+            raise NetworkError(error_msg) from e
 
     def get_chat_completion_models(self) -> list[Deployment]:
         """Get deployments suitable for agents (chat completion capable).
@@ -540,6 +555,10 @@ class ProjectClientService:
             raise NotAuthenticated(str(e)) from e
         except HttpResponseError as e:
             raise NetworkError(f"Failed to create agent: {e}") from e
+        except Exception as e:
+            # Format SSL errors with helpful guidance
+            error_msg = format_ssl_error_message(e)
+            raise NetworkError(error_msg) from e
 
     def update_agent(
         self,
@@ -604,3 +623,7 @@ class ProjectClientService:
             raise NotAuthenticated(str(e)) from e
         except HttpResponseError as e:
             raise NetworkError(f"Failed to update agent: {e}") from e
+        except Exception as e:
+            # Format SSL errors with helpful guidance
+            error_msg = format_ssl_error_message(e)
+            raise NetworkError(error_msg) from e

@@ -100,9 +100,18 @@ async def test_agents_table_has_correct_columns(mock_auth_and_config) -> None:
 
         table = app.screen.query_one("#resource-table", DataTable)
 
-        # Get column labels - includes Tools and KB count columns
+        # Get column labels - includes Status, Tools and KB count columns
         columns = [col.label.plain for col in table.columns.values()]
-        assert columns == ["Name", "Version", "Type", "Tools", "KB", "Created", "Description"]
+        assert columns == [
+            "Name",
+            "Status",
+            "Version",
+            "Type",
+            "Tools",
+            "KB",
+            "Created",
+            "Description",
+        ]
 
 
 async def test_agents_table_rows_have_data(mock_auth_and_config) -> None:
@@ -120,10 +129,12 @@ async def test_agents_table_rows_have_data(mock_auth_and_config) -> None:
         first_row_key = next(iter(table.rows.keys()))
         row_data = table.get_row(first_row_key)
 
-        # All columns should have data (not empty strings)
-        # Row format: [name, version, type, tools, kb, created, description]
-        name, version, agent_type, tools, kb, created, description = row_data
+        # All columns should have data (not empty strings, except Status which can be empty)
+        # Row format: [name, status, version, type, tools, kb, created, description]
+        name, status, version, agent_type, tools, kb, created, description = row_data
         assert name, "Name should not be empty"
+        # Status can be empty (not published) or "Published"
+        assert status is not None, "Status should be present"
         assert version, "Version should not be empty"
         assert agent_type, "Type should not be empty"
         # Tools and KB are counts, can be "0"

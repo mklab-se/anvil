@@ -9,6 +9,7 @@ from azure.core.exceptions import ClientAuthenticationError
 from azure.identity import AzureCliCredential, InteractiveBrowserCredential
 
 from anvil.services.exceptions import NotAuthenticated
+from anvil.services.ssl_config import format_ssl_error_message
 
 if TYPE_CHECKING:
     pass
@@ -59,9 +60,11 @@ class AuthService:
                 error_message="Not logged in. Run 'az login' or use browser login.",
             )
         except Exception as e:
+            # Format SSL errors with helpful guidance
+            error_msg = format_ssl_error_message(e)
             return AuthResult(
                 status=AuthStatus.NOT_AUTHENTICATED,
-                error_message=str(e),
+                error_message=error_msg,
             )
 
     def login(self) -> AuthResult:
@@ -84,9 +87,11 @@ class AuthService:
                 error_message=f"Authentication failed: {e}",
             )
         except Exception as e:
+            # Format SSL errors with helpful guidance
+            error_msg = format_ssl_error_message(e)
             return AuthResult(
                 status=AuthStatus.AUTH_FAILED,
-                error_message=f"Login error: {e}",
+                error_message=error_msg,
             )
 
     def get_credential(self) -> TokenCredential:

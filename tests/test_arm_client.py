@@ -99,23 +99,55 @@ class TestPublishedAgentDataclass:
 
     def test_published_agent_has_all_fields(self):
         """Test that PublishedAgent has all required fields."""
+        from anvil.services.arm_client import PublishedDeployment
+
+        deployment = PublishedDeployment(
+            deployment_name="test-deployment",
+            state="Running",
+            protocols=["Responses"],
+        )
         pub = PublishedAgent(
             agent_name="test-agent",
             application_name="test-app",
             base_url="https://test.url",
             is_enabled=True,
-            protocols=["Responses"],
-            state="Running",
-            deployment_name="test-deployment",
+            deployments=[deployment],
         )
 
         assert pub.agent_name == "test-agent"
         assert pub.application_name == "test-app"
         assert pub.base_url == "https://test.url"
         assert pub.is_enabled is True
+        # Test backward-compatible properties
         assert pub.protocols == ["Responses"]
         assert pub.state == "Running"
         assert pub.deployment_name == "test-deployment"
+        assert pub.has_multiple_deployments is False
+
+    def test_published_agent_multiple_deployments(self):
+        """Test PublishedAgent with multiple deployments."""
+        from anvil.services.arm_client import PublishedDeployment
+
+        dep1 = PublishedDeployment(
+            deployment_name="deploy-1", state="Running", protocols=["Responses"]
+        )
+        dep2 = PublishedDeployment(
+            deployment_name="deploy-2", state="Stopped", protocols=["ActivityProtocol"]
+        )
+        pub = PublishedAgent(
+            agent_name="multi-agent",
+            application_name="app",
+            base_url="https://test.url",
+            is_enabled=True,
+            deployments=[dep1, dep2],
+        )
+
+        assert pub.has_multiple_deployments is True
+        assert len(pub.deployments) == 2
+        # Properties return first deployment's values
+        assert pub.state == "Running"
+        assert pub.protocols == ["Responses"]
+        assert pub.deployment_name == "deploy-1"
 
 
 class TestListPublishedAgents:

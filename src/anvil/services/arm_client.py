@@ -8,19 +8,53 @@ import httpx
 from azure.core.credentials import TokenCredential
 
 from anvil.services.exceptions import NetworkError, NotAuthenticated
+from anvil.services.ssl_config import format_ssl_error_message, get_ssl_verify
+
+
+@dataclass
+class PublishedDeployment:
+    """Individual deployment/version of a published agent."""
+
+    deployment_name: str
+    state: str  # "Running", "Stopped", etc.
+    protocols: list[str]  # ["Responses", "ActivityProtocol"]
 
 
 @dataclass
 class PublishedAgent:
-    """Published agent information."""
+    """Published agent information with all deployments."""
 
     agent_name: str
     application_name: str
     base_url: str
     is_enabled: bool
-    protocols: list[str]  # ["Responses", "ActivityProtocol"]
-    state: str  # "Running", "Stopped", etc.
-    deployment_name: str
+    deployments: list[PublishedDeployment]  # All versions/deployments
+
+    @property
+    def state(self) -> str:
+        """Get state of the primary deployment (backward compatibility)."""
+        if self.deployments:
+            return self.deployments[0].state
+        return "Unknown"
+
+    @property
+    def protocols(self) -> list[str]:
+        """Get protocols of the primary deployment (backward compatibility)."""
+        if self.deployments:
+            return self.deployments[0].protocols
+        return []
+
+    @property
+    def deployment_name(self) -> str:
+        """Get name of the primary deployment (backward compatibility)."""
+        if self.deployments:
+            return self.deployments[0].deployment_name
+        return ""
+
+    @property
+    def has_multiple_deployments(self) -> bool:
+        """Check if agent has multiple deployments/versions."""
+        return len(self.deployments) > 1
 
 
 class ArmClientService:
@@ -133,7 +167,8 @@ class ArmClientService:
         }
 
         try:
-            with httpx.Client(timeout=30.0) as client:
+            ssl_verify = get_ssl_verify()
+            with httpx.Client(timeout=30.0, verify=ssl_verify) as client:
                 if method == "GET":
                     response = client.get(url, headers=headers)
                 elif method == "DELETE":
@@ -155,7 +190,9 @@ class ArmClientService:
 
                 return response.json() if response.text else {}
         except httpx.RequestError as e:
-            raise NetworkError(f"ARM API request failed: {e}") from e
+            # Provide helpful SSL error messages
+            error_msg = format_ssl_error_message(e)
+            raise NetworkError(error_msg) from e
 
     def list_published_agents(self) -> list[PublishedAgent]:
         """List all published agents in the project.
@@ -199,10 +236,8 @@ class ArmClientService:
                     if not agent_name:
                         continue
 
-                    # Find matching deployment for protocols and state
-                    protocols: list[str] = []
-                    state = "Unknown"
-                    deployment_name = ""
+                    # Find ALL matching deployments for this agent
+                    agent_deployments: list[PublishedDeployment] = []
 
                     for deployment in deployments:
                         dep_props = deployment.get("properties", {})
@@ -215,10 +250,19 @@ class ArmClientService:
                                 state = dep_props.get("state", "Unknown")
 
                                 # Extract protocol names
+                                protocols: list[str] = []
                                 for proto in dep_props.get("protocols", []):
                                     proto_name = proto.get("protocol", "")
                                     if proto_name:
                                         protocols.append(proto_name)
+
+                                agent_deployments.append(
+                                    PublishedDeployment(
+                                        deployment_name=deployment_name,
+                                        state=state,
+                                        protocols=protocols,
+                                    )
+                                )
                                 break
 
                     published_agents.append(
@@ -227,9 +271,7 @@ class ArmClientService:
                             application_name=app_name,
                             base_url=base_url,
                             is_enabled=is_enabled,
-                            protocols=protocols,
-                            state=state,
-                            deployment_name=deployment_name,
+                            deployments=agent_deployments,
                         )
                     )
 

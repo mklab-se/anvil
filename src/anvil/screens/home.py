@@ -12,7 +12,7 @@ from textual.worker import Worker, WorkerState, get_current_worker
 
 from anvil.config import FoundrySelection
 from anvil.screens.agent_edit import AgentEditScreen
-from anvil.services.arm_client import ArmClientService, PublishedAgent
+from anvil.services.arm_client import ArmClientService, PublishedAgent, PublishedDeployment
 from anvil.services.project_client import Agent, Deployment, ProjectClientService
 from anvil.widgets.sidebar import Sidebar
 
@@ -388,8 +388,12 @@ class HomeScreen(Screen[None]):
             tools_count = str(len(agent.tools)) if agent.tools else "0"
             kb_count = str(len(agent.knowledge)) if agent.knowledge else "0"
 
+            # Show published status
+            status = "Published" if agent.is_published else ""
+
             table.add_row(
                 agent.name,
+                status,
                 agent.version,
                 agent.agent_type,
                 tools_count,
@@ -403,7 +407,9 @@ class HomeScreen(Screen[None]):
         """Configure the table for Agents resource."""
         table = self.query_one("#resource-table", DataTable)
         table.clear(columns=True)
-        table.add_columns("Name", "Version", "Type", "Tools", "KB", "Created", "Description")
+        table.add_columns(
+            "Name", "Status", "Version", "Type", "Tools", "KB", "Created", "Description"
+        )
 
     def _setup_models_table(self) -> None:
         """Configure the table for Models resource."""
@@ -642,16 +648,43 @@ class HomeScreen(Screen[None]):
         lines.append("\n[b]── Publishing ──[/b]")
         if agent.is_published:
             lines.append("[green]Status: Published[/green]")
-            if agent.published_url:
-                # Truncate URL for display
-                url = agent.published_url
-                if len(url) > 40:
-                    url = url[:37] + "..."
-                lines.append(f"URL: {url}")
-            if agent.published_protocols:
-                protocols = ", ".join(agent.published_protocols)
-                lines.append(f"Protocols: {protocols}")
-            lines.append("\n[dim]Press 'u' to unpublish[/dim]")
+
+            # Get full published agent details
+            pub_agent = self._published_agents.get(agent.name)
+            if pub_agent:
+                # Show full URL
+                if pub_agent.base_url:
+                    lines.append(f"URL: {pub_agent.base_url}")
+
+                # Show all deployments
+                if pub_agent.deployments:
+                    if pub_agent.has_multiple_deployments:
+                        lines.append(f"\n[b]Deployments ({len(pub_agent.deployments)}):[/b]")
+                    for dep in pub_agent.deployments:
+                        state_color = "green" if dep.state == "Running" else "yellow"
+                        protocols_str = ", ".join(dep.protocols) if dep.protocols else "None"
+                        lines.append(f"  • {dep.deployment_name}")
+                        lines.append(f"    State: [{state_color}]{dep.state}[/{state_color}]")
+                        lines.append(f"    Protocols: {protocols_str}")
+                else:
+                    # Fallback to basic info
+                    if agent.published_protocols:
+                        protocols = ", ".join(agent.published_protocols)
+                        lines.append(f"Protocols: {protocols}")
+
+                # Show unpublish hint
+                if pub_agent.has_multiple_deployments:
+                    lines.append("\n[dim]Press 'u' to select deployment to unpublish[/dim]")
+                else:
+                    lines.append("\n[dim]Press 'u' to unpublish[/dim]")
+            else:
+                # Fallback if no full details
+                if agent.published_url:
+                    lines.append(f"URL: {agent.published_url}")
+                if agent.published_protocols:
+                    protocols = ", ".join(agent.published_protocols)
+                    lines.append(f"Protocols: {protocols}")
+                lines.append("\n[dim]Press 'u' to unpublish[/dim]")
         else:
             lines.append("[dim]Status: Not Published[/dim]")
 
@@ -866,13 +899,45 @@ class HomeScreen(Screen[None]):
             self.notify("Published agent info not found", severity="error")
             return
 
-        # Confirm before unpublishing
+        # Check for multiple deployments
+        if pub_agent.has_multiple_deployments:
+            # Show deployment selection screen first
+            self.app.push_screen(
+                SelectDeploymentScreen(agent.name, pub_agent.deployments),
+                callback=lambda dep: self._handle_deployment_selection(dep, pub_agent),
+            )
+        else:
+            # Single deployment - confirm directly
+            self.app.push_screen(
+                ConfirmUnpublishScreen(agent_name=agent.name),
+                callback=lambda confirmed: self._handle_unpublish_confirmation(
+                    confirmed, pub_agent
+                ),
+            )
+
+    def _handle_deployment_selection(
+        self, deployment: PublishedDeployment | None, pub_agent: PublishedAgent
+    ) -> None:
+        """Handle deployment selection for unpublishing."""
+        if not deployment:
+            return  # User cancelled
+
+        # Now confirm the unpublish for selected deployment
         self.app.push_screen(
-            ConfirmUnpublishScreen(agent_name=agent.name),
-            callback=lambda confirmed: self._handle_unpublish_confirmation(confirmed, pub_agent),
+            ConfirmUnpublishScreen(
+                agent_name=f"{pub_agent.agent_name} ({deployment.deployment_name})"
+            ),
+            callback=lambda confirmed: self._handle_unpublish_confirmation(
+                confirmed, pub_agent, deployment
+            ),
         )
 
-    def _handle_unpublish_confirmation(self, confirmed: bool, pub_agent: PublishedAgent) -> None:
+    def _handle_unpublish_confirmation(
+        self,
+        confirmed: bool,
+        pub_agent: PublishedAgent,
+        deployment: PublishedDeployment | None = None,
+    ) -> None:
         """Handle unpublish confirmation result."""
         if not confirmed:
             return
@@ -880,18 +945,21 @@ class HomeScreen(Screen[None]):
         if not self._arm_client:
             return
 
+        # Use selected deployment or default to first one
+        dep_name = deployment.deployment_name if deployment else pub_agent.deployment_name
+
         # Run unpublish in background
         self.run_worker(
-            lambda: self._do_unpublish(pub_agent),
+            lambda: self._do_unpublish(pub_agent.application_name, dep_name, pub_agent.agent_name),
             thread=True,
             name="unpublish_agent",
         )
 
-    def _do_unpublish(self, pub_agent: PublishedAgent) -> str:
+    def _do_unpublish(self, application_name: str, deployment_name: str, agent_name: str) -> str:
         """Perform the unpublish operation in background thread."""
         if self._arm_client:
-            self._arm_client.unpublish_agent(pub_agent.application_name, pub_agent.deployment_name)
-        return pub_agent.agent_name
+            self._arm_client.unpublish_agent(application_name, deployment_name)
+        return agent_name
 
     def action_focus_next(self) -> None:
         """Focus the next pane."""
@@ -996,3 +1064,89 @@ class ConfirmUnpublishScreen(Screen[bool]):
     def action_confirm(self) -> None:
         """Confirm the operation."""
         self.dismiss(True)
+
+
+class SelectDeploymentScreen(Screen[PublishedDeployment | None]):
+    """Screen to select which deployment to unpublish when there are multiple."""
+
+    CSS = """
+    SelectDeploymentScreen {
+        align: center middle;
+    }
+
+    #select-dialog {
+        width: 60;
+        height: auto;
+        max-height: 20;
+        padding: 1 2;
+        background: $surface;
+        border: solid $primary;
+    }
+
+    #select-title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+
+    #select-message {
+        margin-bottom: 1;
+        color: $text-muted;
+    }
+
+    #deployment-list {
+        height: auto;
+        max-height: 10;
+        margin-bottom: 1;
+    }
+
+    .deployment-btn {
+        width: 100%;
+        margin-bottom: 1;
+    }
+
+    #cancel-btn {
+        width: 100%;
+    }
+    """
+
+    BINDINGS = [  # noqa: RUF012
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, agent_name: str, deployments: list[PublishedDeployment]) -> None:
+        """Initialize the selection screen."""
+        super().__init__()
+        self._agent_name = agent_name
+        self._deployments = deployments
+
+    def compose(self) -> ComposeResult:
+        """Create the selection dialog."""
+        with Container(id="select-dialog"):
+            yield Static("Select Deployment to Unpublish", id="select-title")
+            yield Static(
+                f"Agent '{self._agent_name}' has {len(self._deployments)} deployments.\n"
+                "Select which one to unpublish:",
+                id="select-message",
+            )
+            with Vertical(id="deployment-list"):
+                for i, dep in enumerate(self._deployments):
+                    state_indicator = "🟢" if dep.state == "Running" else "🟡"
+                    protocols = ", ".join(dep.protocols) if dep.protocols else "None"
+                    yield Button(
+                        f"{state_indicator} {dep.deployment_name} ({protocols})",
+                        id=f"dep-{i}",
+                        classes="deployment-btn",
+                    )
+            yield Button("Cancel", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press."""
+        if event.button.id == "cancel-btn":
+            self.dismiss(None)
+        elif event.button.id and event.button.id.startswith("dep-"):
+            idx = int(event.button.id.split("-")[1])
+            self.dismiss(self._deployments[idx])
+
+    def action_cancel(self) -> None:
+        """Cancel the operation."""
+        self.dismiss(None)

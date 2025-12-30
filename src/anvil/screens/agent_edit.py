@@ -34,14 +34,9 @@ class AgentEditScreen(Screen[Agent | None]):
     ]
 
     CSS = """
-    AgentEditScreen {
-        layout: grid;
-        grid-size: 1;
-    }
-
     #edit-container {
         width: 100%;
-        height: 100%;
+        height: 1fr;
         background: $background;
     }
 
@@ -142,6 +137,7 @@ class AgentEditScreen(Screen[Agent | None]):
     /* Tool checkboxes */
     #tools-container {
         padding-left: 2;
+        height: auto;
     }
 
     .tool-row {
